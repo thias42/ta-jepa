@@ -112,6 +112,17 @@ class ProbeResult:
     n_test: int
 
 
+@dataclass
+class CVResult:
+    mean_acc: float
+    std_acc: float
+    per_fold: dict[int, float]
+    num_classes: int
+    feature_dim: int
+    n_clips: int
+    n_seeds: int
+
+
 def run_linear_probe(
     train_ds: Dataset,
     test_ds: Dataset,
@@ -141,4 +152,56 @@ def run_linear_probe(
         feature_dim=xtr.shape[1],
         n_train=len(ytr),
         n_test=len(yte),
+    )
+
+
+def run_cv_probe(
+    dataset: Dataset,
+    representation: Representation,
+    pool: str = "meanstd",
+    n_seeds: int = 3,
+    epochs: int = 300,
+    lr: float = 1e-2,
+    device: str | None = None,
+    verbose: bool = False,
+) -> CVResult:
+    """Leave-one-fold-out CV over a dataset carrying official ``fold`` ids.
+
+    The proper, low-noise ESC-50 protocol: the (expensive) representation pooling is
+    done once over all clips, then for each held-out fold a fresh linear probe is fit
+    on the rest and scored — averaged over ``n_seeds`` probe inits to damp the
+    linear-fit randomness. Reports mean ± std across folds (std is the honest error
+    bar that the earlier single-split numbers lacked).
+    """
+    device = device or resolve_device("auto")
+    X, labels, folds = extract_pooled(dataset, representation, pool, device)
+    if any(f is None for f in folds):
+        raise ValueError("run_cv_probe requires every entry to have a 'fold' id")
+
+    classes = sorted({lab for lab in labels if lab is not None})
+    idx = {c: i for i, c in enumerate(classes)}
+    y = torch.tensor([idx[l] for l in labels], dtype=torch.long)
+    folds_t = torch.tensor([int(f) for f in folds])
+
+    per_fold: dict[int, float] = {}
+    for f in sorted(set(folds_t.tolist())):
+        te = folds_t == f
+        xtr, ytr, xte, yte = X[~te], y[~te], X[te], y[te]
+        seed_accs = []
+        for seed in range(n_seeds):
+            torch.manual_seed(seed)
+            probe = LinearProbe(X.shape[1], len(classes))
+            probe.fit(xtr, ytr, epochs=epochs, lr=lr, device=device, verbose=verbose)
+            seed_accs.append(probe.score(xte, yte, device))
+        per_fold[int(f)] = sum(seed_accs) / len(seed_accs)
+
+    fold_accs = torch.tensor(list(per_fold.values()))
+    return CVResult(
+        mean_acc=float(fold_accs.mean()),
+        std_acc=float(fold_accs.std(unbiased=False)),
+        per_fold=per_fold,
+        num_classes=len(classes),
+        feature_dim=X.shape[1],
+        n_clips=len(y),
+        n_seeds=n_seeds,
     )

@@ -7,6 +7,7 @@ audio analogue of an action-conditioned V-JEPA, not a static representation lear
 
 - Design rationale, phases, evaluation, novelty: [`docs/temporal-audio-jepa-plan.md`](docs/temporal-audio-jepa-plan.md)
 - Quick-reference invariants & commands for contributors (incl. Claude): [`CLAUDE.md`](CLAUDE.md)
+- Phase 0 baseline numbers (ESC-50 5-fold CV): [`RESULTS.md`](RESULTS.md)
 
 ## Status — Phase 0 (scaffolding & baselines)
 

@@ -23,6 +23,7 @@ from tajepa.eval import (
     APCRepresentation,
     AJEPARepresentation,
     run_linear_probe,
+    run_cv_probe,
 )
 
 
@@ -36,14 +37,21 @@ def main() -> None:
     ap.add_argument("--pool", choices=["mean", "meanstd"], default="meanstd")
     ap.add_argument("--train-split", default="train")
     ap.add_argument("--test-split", default="test")
+    ap.add_argument("--cv", action="store_true",
+                    help="Leave-one-fold-out CV over all clips (proper ESC-50 protocol).")
+    ap.add_argument("--seeds", type=int, default=3, help="Probe inits to average over (--cv).")
     ap.add_argument("--epochs", type=int, default=300)
     ap.add_argument("--lr", type=float, default=1e-2)
     ap.add_argument("--device", default=None)
     args = ap.parse_args()
 
-    train_ds = ManifestEmbeddingDataset(args.manifest, args.cache, split=args.train_split)
-    test_ds = ManifestEmbeddingDataset(args.manifest, args.cache, split=args.test_split)
-    feat_dim = train_ds[0]["features"].shape[-1]
+    if args.cv:
+        all_ds = ManifestEmbeddingDataset(args.manifest, args.cache, split=None)
+        feat_dim = all_ds[0]["features"].shape[-1]
+    else:
+        train_ds = ManifestEmbeddingDataset(args.manifest, args.cache, split=args.train_split)
+        test_ds = ManifestEmbeddingDataset(args.manifest, args.cache, split=args.test_split)
+        feat_dim = train_ds[0]["features"].shape[-1]
 
     import sys
 
@@ -69,14 +77,24 @@ def main() -> None:
         rep = AJEPARepresentation(lit.ajepa)
         rep_name = f"A-JEPA patches ({args.ajepa_ckpt.name})"
 
-    print(f"Probe: {rep_name} | pool={args.pool} | {args.train_split}->{args.test_split}")
-    res = run_linear_probe(
-        train_ds, test_ds, rep, pool=args.pool, epochs=args.epochs, lr=args.lr, device=args.device
-    )
-    print(f"  classes={res.num_classes}  feat_dim={res.feature_dim}  "
-          f"n_train={res.n_train}  n_test={res.n_test}")
-    print(f"  train acc = {res.train_acc:.4f}")
-    print(f"  TEST  acc = {res.test_acc:.4f}   (chance = {1.0 / res.num_classes:.4f})")
+    if args.cv:
+        print(f"Probe (CV): {rep_name} | pool={args.pool} | {args.seeds} seeds")
+        res = run_cv_probe(all_ds, rep, pool=args.pool, n_seeds=args.seeds,
+                           epochs=args.epochs, lr=args.lr, device=args.device)
+        per_fold = "  ".join(f"f{k}={v:.3f}" for k, v in sorted(res.per_fold.items()))
+        print(f"  classes={res.num_classes}  feat_dim={res.feature_dim}  n_clips={res.n_clips}")
+        print(f"  per-fold: {per_fold}")
+        print(f"  CV acc = {res.mean_acc:.4f} ± {res.std_acc:.4f}   "
+              f"(chance = {1.0 / res.num_classes:.4f})")
+    else:
+        print(f"Probe: {rep_name} | pool={args.pool} | {args.train_split}->{args.test_split}")
+        res = run_linear_probe(
+            train_ds, test_ds, rep, pool=args.pool, epochs=args.epochs, lr=args.lr, device=args.device
+        )
+        print(f"  classes={res.num_classes}  feat_dim={res.feature_dim}  "
+              f"n_train={res.n_train}  n_test={res.n_test}")
+        print(f"  train acc = {res.train_acc:.4f}")
+        print(f"  TEST  acc = {res.test_acc:.4f}   (chance = {1.0 / res.num_classes:.4f})")
 
 
 if __name__ == "__main__":
