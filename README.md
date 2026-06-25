@@ -11,12 +11,16 @@ audio analogue of an action-conditioned V-JEPA, not a static representation lear
 
 ## Status
 
-**Phase 1 (causal latent JEPA) — the core model — is implemented and verified end-to-end:**
-causal frame encoder + EMA target + causal multi-offset predictor, latent smooth-L1 +
-**VICReg** anti-collapse (`src/tajepa/models/jepa.py`, `scripts/train_jepa.py`). On a quick
-run it beats latent persistence at every offset and does not collapse (feature std ≈ 1,
-effective rank ≈ 170/256). A full FMA-pretrained run probed on ESC-50 — vs the APC bar of
-58.7% — is the next compute step.
+**Phase 1 (causal latent JEPA) — the core model — is implemented and trained, but the
+first full run does NOT pass the gate.** Causal frame encoder + EMA target + causal
+multi-offset predictor, latent smooth-L1 + **VICReg** (`src/tajepa/models/jepa.py`,
+`scripts/train_jepa.py`). The pretext objective is excellent — it crushes latent
+persistence at every offset and does not collapse (feature std ≈ 1, effective rank
+≈ 241/256) — but the FMA-pretrained encoder probes at **44.8%** on ESC-50, *below* the
+raw-codec baseline (54.7%) and the APC bar (58.7%). This is a representation/prediction
+decoupling: predictable + full-rank ≠ semantically useful. See [`RESULTS.md`](RESULTS.md)
+for the diagnosis and the planned Phase 1 iterations (latent grounding, full-context
+target encoder). Phase 2 is gated on a Phase 1 variant clearing the APC bar.
 
 ### Phase 0 (scaffolding & baselines) — complete
 

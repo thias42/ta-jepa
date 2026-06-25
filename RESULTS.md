@@ -34,6 +34,43 @@ probe saw fewer training clips.)
 | APC (causal, codec embeddings) | FMA, 2.5k steps | **58.7% ± 3.1%** |
 | A-JEPA (bidirectional, mel) | FMA, 15k steps | **55.6% ± 3.3%** |
 | A-JEPA (bidirectional, mel) | FMA, 40k steps | **57.5% ± 2.5%** |
+| **Causal JEPA (Phase 1)** | FMA, 25k steps | **44.8% ± 2.2%** ⚠ below baseline |
+
+## Phase 1 — causal JEPA: a clean pretext, a failing probe (gate NOT passed)
+
+The Phase 1 causal latent JEPA **fails its own gate**, and the failure is informative.
+
+- **Pretext objective: excellent.** Forward latent prediction crushes the persistence
+  baseline at every offset (pred L1 0.07–0.12 vs persistence 0.54–1.12) and the
+  representation does **not** collapse — feature std ≈ 1.04, **effective rank ≈ 241/256**.
+  VICReg did exactly its job: no dimensional collapse.
+- **Downstream probe: worse than doing nothing.** ESC-50 5-fold CV = **44.8% ± 2.2%**
+  (45.8% with mean pooling) — ~10 points *below* the raw-codec baseline (54.7%) and ~14
+  below APC (58.7%). Not a pooling artifact (checked mean vs mean+std; codec baseline
+  reproduces at 54.4% through the same code path).
+
+**Diagnosis — representation/prediction decoupling.** The encoder is free to map codec
+embeddings into *any* latent that is (a) predictable by the causal predictor and (b)
+high-variance/decorrelated (VICReg). It found such a space — predictable and full-rank —
+but one that discards class-discriminative acoustic detail present in the raw codec.
+Contrast APC (58.7%): APC regresses the *actual* future codec frame, so its hidden state
+must stay acoustically rich; our JEPA predicts a *moving EMA target in a free latent
+space*, where online encoder and target co-adapt toward an easily-predictable manifold
+with no anchor to the input. VICReg prevents *dimensional* collapse but does not guarantee
+the dimensions carry useful *semantics*. This is precisely the risk the plan's Phase 1
+gate is designed to catch — and it caught it.
+
+**Next levers (Phase 1 iteration — "the real work").** Most promising first:
+1. **Anchor the latent to the codec space** — an auxiliary `z_t → x_t` (or `x_{t+1}`)
+   reconstruction term, i.e. give the JEPA APC's grounding so the latent must stay
+   acoustically informative. Most direct test of the diagnosis.
+2. **Full-context (non-causal) target encoder** (I-JEPA/V-JEPA style) instead of the
+   causal EMA copy, so targets are richer and less co-adaptive.
+3. Sweep the VICReg balance / loss (cosine vs smooth-L1) and the offset set; probe
+   earlier checkpoints to test whether *more* pretext training actively erodes the probe.
+
+Per the plan, **do not proceed to Phase 2 (control) until a Phase 1 variant beats the
+APC bar (58.7%) and persistence.** Beating persistence alone (done) is not sufficient.
 
 Per-fold (CV) for reference:
 
