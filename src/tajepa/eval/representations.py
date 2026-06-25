@@ -48,3 +48,21 @@ class APCRepresentation:
     def __call__(self, feats: torch.Tensor) -> torch.Tensor:
         _, repr_seq = self.model(feats)
         return repr_seq
+
+
+class AJEPARepresentation:
+    """Frozen A-JEPA context-encoder patch tokens (the A-JEPA probe).
+
+    Returns the full (unmasked) patch representations ``[B, N, dim]``; the probe
+    pools over the ``N`` patch axis just as it pools over time for the others.
+    """
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        self.model = model.eval()
+        for p in self.model.parameters():
+            p.requires_grad_(False)
+        self.dim = int(model.dim)
+
+    @torch.no_grad()
+    def __call__(self, feats: torch.Tensor) -> torch.Tensor:
+        return self.model.encode_full(feats)

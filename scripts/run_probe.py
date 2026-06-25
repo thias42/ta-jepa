@@ -18,15 +18,21 @@ from pathlib import Path
 import _bootstrap  # noqa: F401
 
 from tajepa.data.embedding_dataset import ManifestEmbeddingDataset
-from tajepa.eval import IdentityRepresentation, APCRepresentation, run_linear_probe
+from tajepa.eval import (
+    IdentityRepresentation,
+    APCRepresentation,
+    AJEPARepresentation,
+    run_linear_probe,
+)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument("--cache", type=Path, required=True)
-    ap.add_argument("--representation", choices=["codec", "apc"], default="codec")
+    ap.add_argument("--representation", choices=["codec", "apc", "ajepa"], default="codec")
     ap.add_argument("--apc-ckpt", type=Path, default=None)
+    ap.add_argument("--ajepa-ckpt", type=Path, default=None)
     ap.add_argument("--pool", choices=["mean", "meanstd"], default="meanstd")
     ap.add_argument("--train-split", default="train")
     ap.add_argument("--test-split", default="test")
@@ -39,20 +45,29 @@ def main() -> None:
     test_ds = ManifestEmbeddingDataset(args.manifest, args.cache, split=args.test_split)
     feat_dim = train_ds[0]["features"].shape[-1]
 
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
     if args.representation == "codec":
         rep = IdentityRepresentation(feat_dim)
         rep_name = "codec embeddings (identity)"
-    else:
+    elif args.representation == "apc":
         if args.apc_ckpt is None:
             ap.error("--representation apc requires --apc-ckpt")
-        import sys
-
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
         from train_apc import APCLightning
 
         lit = APCLightning.load_from_checkpoint(str(args.apc_ckpt), map_location="cpu")
         rep = APCRepresentation(lit.model)
         rep_name = f"APC hidden ({args.apc_ckpt.name})"
+    else:
+        if args.ajepa_ckpt is None:
+            ap.error("--representation ajepa requires --ajepa-ckpt")
+        from train_ajepa import AJEPALightning
+
+        lit = AJEPALightning.load_from_checkpoint(str(args.ajepa_ckpt), map_location="cpu")
+        rep = AJEPARepresentation(lit.ajepa)
+        rep_name = f"A-JEPA patches ({args.ajepa_ckpt.name})"
 
     print(f"Probe: {rep_name} | pool={args.pool} | {args.train_split}->{args.test_split}")
     res = run_linear_probe(

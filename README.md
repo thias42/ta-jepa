@@ -16,7 +16,10 @@ In progress. What's implemented and verified end-to-end:
 - **Offline embedding cache** — `[T, D]` `.npy` per clip + `meta.yaml`.
 - **APC baseline** — causal LSTM + residual + multi-offset time-shift, L1 on the actual
   frame; includes a naive persistence baseline (the bar Phase 1 must beat).
-- **Log-mel frontend** — for the A-JEPA-comparable baseline.
+- **A-JEPA mel baseline** — masked latent prediction over spectrogram patches with an EMA
+  target encoder (bidirectional; X-ARES-comparable). Faithful to I-JEPA/A-JEPA — EMA +
+  stop-grad only, no VICReg (that's reserved for our causal JEPA).
+- **Log-mel frontend** + offline mel caching.
 - **Collapse diagnostics** — feature std / effective rank, wired into training.
 - **Data plumbing** — JSONL manifests (with class label / CV fold), audio +
   cached-embedding datasets (incl. a label-joined `ManifestEmbeddingDataset` for probes),
@@ -29,9 +32,9 @@ In progress. What's implemented and verified end-to-end:
 
 Sanity check on the synthetic set: APC reaches L1 ≈ 1.68 vs persistence ≈ 2.52 at offset 3.
 
-Still open in Phase 0: more pretraining data (AudioSet / MTG-Jamendo), an A-JEPA-style mel
-baseline trainer, and using FMA-pretrained representations in the probe (vs the codec
-baseline below).
+Still open in Phase 0: more pretraining data (AudioSet / MTG-Jamendo), and a full
+FMA-pretrained run of the APC / A-JEPA baselines probed on ESC-50 (vs the codec baseline
+below) — the trainers and eval are in place; what's left is the compute.
 
 ## Setup
 
@@ -67,6 +70,20 @@ $P scripts/extract_embeddings.py \
 
 `ManifestEmbeddingDataset(manifest, cache, split="train")` then yields cached features joined
 to integer-encoded class labels and CV folds — the input to the X-ARES-style linear probe.
+
+## A-JEPA mel baseline
+
+```bash
+P=$(conda run -n ta-jepa which python)
+# cache log-mel for the pretraining set (and the probe set), then pretrain:
+$P scripts/extract_mel.py --manifest data/manifests/fma_small.jsonl \
+    --cache data/cache/logmel/fma_small --config configs/mel_baseline.yaml
+$P scripts/train_ajepa.py --cache data/cache/logmel/fma_small \
+    --dim 256 --depth 6 --mask-ratio 0.6 --max-steps 20000 --save runs/ajepa.ckpt
+# probe it on ESC-50 (cache ESC-50 mel first with extract_mel.py):
+$P scripts/run_probe.py --manifest data/manifests/esc50.jsonl \
+    --cache data/cache/logmel/esc50 --representation ajepa --ajepa-ckpt runs/ajepa.ckpt
+```
 
 ## Real data: FMA-small (music pretraining)
 

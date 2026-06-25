@@ -126,6 +126,12 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   embedding caching (`extract.py`). **Continuous pre-quantizer embeddings only.**
 - `src/tajepa/features/mel.py` — log-mel frontend for the A-JEPA-comparable baseline.
 - `src/tajepa/models/apc.py` — APC baseline + `persistence_l1` (the bar Phase 1 must beat).
+- `src/tajepa/models/ajepa.py` — A-JEPA mel baseline: masked latent prediction over
+  spectrogram patches with an EMA target. Bidirectional, EMA+stop-grad only (NO VICReg —
+  that's reserved for the causal JEPA). `train_ajepa.py` owns the EMA target + momentum
+  schedule. Probe via `AJEPARepresentation` on cached **log-mel** (`extract_mel.py`).
+- `src/tajepa/extract.py` — generic feature-cache core; `codec/extract.py` (codec) and
+  `extract_mel.py` (log-mel) both delegate to it.
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.
