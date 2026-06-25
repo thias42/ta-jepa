@@ -7,6 +7,7 @@ from tajepa.models.jepa import (
     CausalTransformer,
     jepa_loss,
     vicreg_terms,
+    grounding_loss,
     latent_persistence_l1,
 )
 
@@ -43,6 +44,26 @@ def test_vicreg_variance_penalizes_collapse():
     var_d, _ = vicreg_terms(diverse)
     assert var_c > var_d
     assert var_c > 0.9                              # near the hinge target gamma=1
+
+
+def test_grounding_reconstruction_learns():
+    # The grounding head should be able to reconstruct a standardized codec frame from
+    # the latent of a clip that is a deterministic function of its input.
+    torch.manual_seed(0)
+    b, t, d = 8, 20, 16
+    model = JEPA(in_dim=d, dim=32, enc_depth=2, pred_depth=1, heads=4, offsets=(1,))
+    x = torch.randn(b, t, d)
+    opt = torch.optim.Adam(model.parameters(), lr=5e-3)
+    first = last = None
+    for step in range(60):
+        z = model.encode(x)
+        loss = grounding_loss(model.reconstruct(z), x)
+        opt.zero_grad(); loss.backward(); opt.step()
+        if step == 0:
+            first = loss.item()
+        last = loss.item()
+    assert last < first
+    assert model.reconstruct(model.encode(x)).shape == (b, t, d)
 
 
 def test_persistence_and_loss_run():

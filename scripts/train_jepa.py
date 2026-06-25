@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 
 from tajepa.data.embedding_dataset import EmbeddingSequenceDataset, pad_collate
 from tajepa.diagnostics import collapse_report
-from tajepa.models.jepa import JEPA, jepa_loss, latent_persistence_l1
+from tajepa.models.jepa import JEPA, jepa_loss, grounding_loss, latent_persistence_l1
 from tajepa.utils import seed_everything
 
 
@@ -36,7 +36,8 @@ class JEPALightning(pl.LightningModule):
     def __init__(
         self, in_dim=128, dim=256, enc_depth=6, pred_depth=3, heads=4,
         offsets=(1, 2, 3, 4), dropout=0.0, lr=2e-4, weight_decay=0.05,
-        var_coef=1.0, cov_coef=0.04, base_momentum=0.996, max_steps=20000,
+        var_coef=1.0, cov_coef=0.04, grounding_coef=0.0,
+        base_momentum=0.996, max_steps=20000,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -65,6 +66,10 @@ class JEPALightning(pl.LightningModule):
             z_tgt = self.target(x, pad)
         loss, logs = jepa_loss(preds, z, z_tgt, pad,
                                var_coef=self.hparams.var_coef, cov_coef=self.hparams.cov_coef)
+        if self.hparams.grounding_coef > 0:
+            recon_loss = grounding_loss(self.jepa.reconstruct(z), x, pad)
+            loss = loss + self.hparams.grounding_coef * recon_loss
+            self.log("train/recon_loss", float(recon_loss.detach()))
 
         for k in ("loss", "pred_loss", "var_loss", "cov_loss"):
             self.log(f"train/{k}", logs[k], prog_bar=(k == "loss"))
@@ -98,6 +103,8 @@ def main() -> None:
     ap.add_argument("--weight-decay", type=float, default=0.05)
     ap.add_argument("--var-coef", type=float, default=1.0)
     ap.add_argument("--cov-coef", type=float, default=0.04)
+    ap.add_argument("--grounding-coef", type=float, default=0.0,
+                    help="Weight on the z_t->codec-frame reconstruction anchor (0=off).")
     ap.add_argument("--base-momentum", type=float, default=0.996)
     ap.add_argument("--window", type=int, default=256)
     ap.add_argument("--batch-size", type=int, default=32)
@@ -121,6 +128,7 @@ def main() -> None:
         in_dim=in_dim, dim=args.dim, enc_depth=args.enc_depth, pred_depth=args.pred_depth,
         heads=args.heads, offsets=tuple(args.offsets), dropout=args.dropout, lr=args.lr,
         weight_decay=args.weight_decay, var_coef=args.var_coef, cov_coef=args.cov_coef,
+        grounding_coef=args.grounding_coef,
         base_momentum=args.base_momentum, max_steps=args.max_steps,
     )
     trainer = pl.Trainer(

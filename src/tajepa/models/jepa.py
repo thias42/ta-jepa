@@ -93,14 +93,22 @@ class JEPA(nn.Module):
     ) -> None:
         super().__init__()
         self.dim = dim
+        self.in_dim = in_dim
         self.offsets = tuple(offsets)
         self.encoder = CausalTransformer(in_dim, dim, enc_depth, heads, dropout)
         self.predictor = CausalPredictor(dim, pred_depth, heads, self.offsets, dropout)
+        # Grounding head: reconstruct the codec frame from the latent, to anchor the
+        # latent to acoustically-rich content (optional; trainer weights it).
+        self.recon_head = nn.Linear(dim, in_dim)
 
     def forward(self, x, pad_mask=None):
         z = self.encoder(x, pad_mask)            # online latents [B,T,dim]
         preds = self.predictor(z, pad_mask)      # offset -> [B,T,dim]
         return z, preds
+
+    def reconstruct(self, z) -> torch.Tensor:
+        """Predict the codec frame from the latent ``z_t -> x_t`` (grounding anchor)."""
+        return self.recon_head(z)
 
     def encode(self, x, pad_mask=None) -> torch.Tensor:
         return self.encoder(x, pad_mask)
@@ -165,6 +173,22 @@ def jepa_loss(
         var_loss=float(var_loss.detach()), cov_loss=float(cov_loss.detach()),
     )
     return total, logs
+
+
+def grounding_loss(recon, x, pad_mask=None):
+    """Masked MSE of the reconstructed codec frame against a per-batch-standardized
+    target. Standardizing the target keeps this O(1) — comparable to the latent
+    prediction loss — so the grounding coefficient stays interpretable regardless of
+    the raw codec embedding scale."""
+    rows = _valid_rows(x, pad_mask)
+    mu = rows.mean(0)
+    sd = rows.std(0).clamp_min(1e-4)
+    x_n = (x - mu) / sd
+    if pad_mask is not None:
+        valid = (~pad_mask).unsqueeze(-1)
+        return (F.mse_loss(recon, x_n, reduction="none") * valid).sum() / (
+            valid.sum().clamp(min=1) * x.shape[-1])
+    return F.mse_loss(recon, x_n)
 
 
 @torch.no_grad()

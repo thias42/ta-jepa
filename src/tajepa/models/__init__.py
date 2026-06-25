@@ -6,6 +6,7 @@ from .jepa import (
     CausalPredictor,
     jepa_loss,
     vicreg_terms,
+    grounding_loss,
     latent_persistence_l1,
     causal_mask,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "CausalPredictor",
     "jepa_loss",
     "vicreg_terms",
+    "grounding_loss",
     "latent_persistence_l1",
     "causal_mask",
 ]
