@@ -9,9 +9,18 @@ audio analogue of an action-conditioned V-JEPA, not a static representation lear
 - Quick-reference invariants & commands for contributors (incl. Claude): [`CLAUDE.md`](CLAUDE.md)
 - Phase 0 baseline numbers (ESC-50 5-fold CV): [`RESULTS.md`](RESULTS.md)
 
-## Status — Phase 0 (scaffolding & baselines)
+## Status
 
-In progress. What's implemented and verified end-to-end:
+**Phase 1 (causal latent JEPA) — the core model — is implemented and verified end-to-end:**
+causal frame encoder + EMA target + causal multi-offset predictor, latent smooth-L1 +
+**VICReg** anti-collapse (`src/tajepa/models/jepa.py`, `scripts/train_jepa.py`). On a quick
+run it beats latent persistence at every offset and does not collapse (feature std ≈ 1,
+effective rank ≈ 170/256). A full FMA-pretrained run probed on ESC-50 — vs the APC bar of
+58.7% — is the next compute step.
+
+### Phase 0 (scaffolding & baselines) — complete
+
+What's implemented and verified end-to-end:
 
 - **Codec frontend** — frozen EnCodec, continuous *pre-quantizer* embeddings (75 Hz, dim 128).
 - **Offline embedding cache** — `[T, D]` `.npy` per clip + `meta.yaml`.

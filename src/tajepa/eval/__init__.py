@@ -3,6 +3,7 @@ from .representations import (
     IdentityRepresentation,
     APCRepresentation,
     AJEPARepresentation,
+    JEPARepresentation,
 )
 from .probe import (
     LinearProbe,
@@ -17,6 +18,7 @@ __all__ = [
     "IdentityRepresentation",
     "APCRepresentation",
     "AJEPARepresentation",
+    "JEPARepresentation",
     "LinearProbe",
     "extract_pooled",
     "pool_time",

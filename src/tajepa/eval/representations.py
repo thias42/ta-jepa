@@ -66,3 +66,21 @@ class AJEPARepresentation:
     @torch.no_grad()
     def __call__(self, feats: torch.Tensor) -> torch.Tensor:
         return self.model.encode_full(feats)
+
+
+class JEPARepresentation:
+    """Frozen causal JEPA frame encoder ``f_θ`` (the Phase 1 probe).
+
+    Returns the online latent sequence ``[B, T, dim]``; the probe pools over time.
+    This is what the Phase 1 gate measures against the APC / codec baselines.
+    """
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        self.model = model.eval()
+        for p in self.model.parameters():
+            p.requires_grad_(False)
+        self.dim = int(model.dim)
+
+    @torch.no_grad()
+    def __call__(self, feats: torch.Tensor) -> torch.Tensor:
+        return self.model.encode(feats)

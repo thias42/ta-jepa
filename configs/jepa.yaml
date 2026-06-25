@@ -1,0 +1,24 @@
+# Phase 1 causal latent JEPA (the core model).
+model:
+  in_dim: 128          # EnCodec 24kHz embedding dim
+  dim: 256
+  enc_depth: 6         # frame encoder f_θ
+  pred_depth: 3        # causal predictor g_φ
+  heads: 4
+  # Multi-target offsets, jointly predicted (plan: discourage trivial local-smoothness).
+  # Codec embeddings are temporally smoother than mel, so expect a larger useful horizon
+  # than APC's n~3 — sweep this upward (e.g. 1 2 4 8).
+  offsets: [1, 2, 3, 4]
+loss:
+  # VICReg is mandatory (invariant #3): the EMA target can collapse to a constant at
+  # zero loss; variance/covariance + EMA + stop-grad prevent it. Watch diag/feature_std
+  # and diag/effective_rank — if feature_std drifts toward 0, raise var_coef.
+  var_coef: 1.0
+  cov_coef: 0.04       # ~ var_coef/25, the VICReg variance:covariance ratio
+train:
+  lr: 2.0e-4
+  weight_decay: 0.05
+  base_momentum: 0.996
+  window: 256
+  batch_size: 32
+  max_steps: 20000

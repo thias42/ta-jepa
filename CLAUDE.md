@@ -130,6 +130,11 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   spectrogram patches with an EMA target. Bidirectional, EMA+stop-grad only (NO VICReg —
   that's reserved for the causal JEPA). `train_ajepa.py` owns the EMA target + momentum
   schedule. Probe via `AJEPARepresentation` on cached **log-mel** (`extract_mel.py`).
+- `src/tajepa/models/jepa.py` — **Phase 1 core**: causal frame encoder `f_θ` + EMA target
+  `f_θ̄` + causal multi-offset predictor `g_φ`; loss = latent smooth-L1 vs stop-grad EMA
+  target **+ VICReg variance/covariance** (mandatory anti-collapse, invariant #3).
+  `train_jepa.py` owns the EMA target + momentum schedule and logs the forward-prediction
+  L1 vs persistence (the gate). Probe via `JEPARepresentation` on cached codec embeddings.
 - `src/tajepa/extract.py` — generic feature-cache core; `codec/extract.py` (codec) and
   `extract_mel.py` (log-mel) both delegate to it.
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired

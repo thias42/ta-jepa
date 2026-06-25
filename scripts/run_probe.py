@@ -22,6 +22,7 @@ from tajepa.eval import (
     IdentityRepresentation,
     APCRepresentation,
     AJEPARepresentation,
+    JEPARepresentation,
     run_linear_probe,
     run_cv_probe,
 )
@@ -31,9 +32,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument("--cache", type=Path, required=True)
-    ap.add_argument("--representation", choices=["codec", "apc", "ajepa"], default="codec")
+    ap.add_argument("--representation", choices=["codec", "apc", "ajepa", "jepa"], default="codec")
     ap.add_argument("--apc-ckpt", type=Path, default=None)
     ap.add_argument("--ajepa-ckpt", type=Path, default=None)
+    ap.add_argument("--jepa-ckpt", type=Path, default=None)
     ap.add_argument("--pool", choices=["mean", "meanstd"], default="meanstd")
     ap.add_argument("--train-split", default="train")
     ap.add_argument("--test-split", default="test")
@@ -68,7 +70,7 @@ def main() -> None:
         lit = APCLightning.load_from_checkpoint(str(args.apc_ckpt), map_location="cpu")
         rep = APCRepresentation(lit.model)
         rep_name = f"APC hidden ({args.apc_ckpt.name})"
-    else:
+    elif args.representation == "ajepa":
         if args.ajepa_ckpt is None:
             ap.error("--representation ajepa requires --ajepa-ckpt")
         from train_ajepa import AJEPALightning
@@ -76,6 +78,14 @@ def main() -> None:
         lit = AJEPALightning.load_from_checkpoint(str(args.ajepa_ckpt), map_location="cpu")
         rep = AJEPARepresentation(lit.ajepa)
         rep_name = f"A-JEPA patches ({args.ajepa_ckpt.name})"
+    else:
+        if args.jepa_ckpt is None:
+            ap.error("--representation jepa requires --jepa-ckpt")
+        from train_jepa import JEPALightning
+
+        lit = JEPALightning.load_from_checkpoint(str(args.jepa_ckpt), map_location="cpu")
+        rep = JEPARepresentation(lit.jepa)
+        rep_name = f"causal JEPA f_θ ({args.jepa_ckpt.name})"
 
     if args.cv:
         print(f"Probe (CV): {rep_name} | pool={args.pool} | {args.seeds} seeds")

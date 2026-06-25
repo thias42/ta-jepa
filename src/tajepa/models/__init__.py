@@ -1,5 +1,14 @@
 from .apc import APCModel, apc_loss
 from .ajepa import AJEPA, ajepa_loss, random_masking, sincos_2d_pos_embed
+from .jepa import (
+    JEPA,
+    CausalTransformer,
+    CausalPredictor,
+    jepa_loss,
+    vicreg_terms,
+    latent_persistence_l1,
+    causal_mask,
+)
 
 __all__ = [
     "APCModel",
@@ -8,4 +17,11 @@ __all__ = [
     "ajepa_loss",
     "random_masking",
     "sincos_2d_pos_embed",
+    "JEPA",
+    "CausalTransformer",
+    "CausalPredictor",
+    "jepa_loss",
+    "vicreg_terms",
+    "latent_persistence_l1",
+    "causal_mask",
 ]
