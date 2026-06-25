@@ -33,7 +33,7 @@ probe saw fewer training clips.)
 | EnCodec embeddings (no pretraining) | — | **54.7% ± 2.6%** |
 | APC (causal, codec embeddings) | FMA, 2.5k steps | **58.7% ± 3.1%** |
 | A-JEPA (bidirectional, mel) | FMA, 15k steps | **55.6% ± 3.3%** |
-| A-JEPA (bidirectional, mel) | FMA, 40k steps | _pending (longer run)_ |
+| A-JEPA (bidirectional, mel) | FMA, 40k steps | **57.5% ± 2.5%** |
 
 Per-fold (CV) for reference:
 
@@ -42,6 +42,7 @@ Per-fold (CV) for reference:
 | codec | 0.533 | 0.515 | 0.569 | 0.584 | 0.533 |
 | APC | 0.598 | 0.548 | 0.617 | 0.621 | 0.553 |
 | A-JEPA 15k | 0.546 | 0.569 | 0.529 | 0.613 | 0.523 |
+| A-JEPA 40k | 0.542 | 0.589 | 0.572 | 0.615 | 0.558 |
 
 ## Predictive quality (sanity)
 
@@ -54,9 +55,11 @@ the plan's "beats persistence" gate for a causal predictor, met by the APC refer
 - **APC (causal) shows a ~4-point lift over the raw-codec baseline**, consistent across
   folds — a mildly encouraging signal for the project's causal-prediction thesis. The
   gap is on the order of the fold std, so it is suggestive, not significant.
-- **A-JEPA-15k is only ~1 point over baseline**, most likely under-trained (hence the
-  40k run). Do not read "APC > A-JEPA" as a finding yet — different modality (codec vs
-  mel), different training budget, single runs.
+- **A-JEPA improves with training** — 55.6% (15k) → 57.5% (40k), confirming the 15k run
+  was under-trained and that the trend is still positive (more steps would likely help
+  further). At 40k it clears the baseline by ~3 points but stays below APC. Do not read
+  "APC > A-JEPA" as a finding yet — different modality (codec vs mel), different training
+  budget, single runs.
 - The headline is methodological: the complete loop (multi-domain audio → cached
   features → causal *and* bidirectional pretraining → one shared CV probe → comparable
   numbers with error bars) runs on full-size data without collapse.
