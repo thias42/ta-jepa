@@ -38,8 +38,10 @@ def sinusoidal_pe(t: int, dim: int, device) -> torch.Tensor:
 
 
 def causal_mask(t: int, device) -> torch.Tensor:
-    """Additive float mask ``[T, T]`` with ``-inf`` above the diagonal (no peeking ahead)."""
-    return torch.triu(torch.full((t, t), float("-inf"), device=device), diagonal=1)
+    """Boolean attention mask ``[T, T]``; ``True`` above the diagonal = cannot attend
+    ahead. Boolean (not additive float) so it matches the boolean key-padding mask and
+    avoids the mismatched-mask-type deprecation in ``nn.TransformerEncoder``."""
+    return torch.triu(torch.ones(t, t, dtype=torch.bool, device=device), diagonal=1)
 
 
 def _encoder_stack(dim, depth, heads, dropout):
