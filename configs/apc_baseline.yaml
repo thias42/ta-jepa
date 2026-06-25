@@ -1,0 +1,14 @@
+# APC baseline (Phase 0 reference).
+# Multi-target offsets discourage trivial local-smoothness solutions (plan, Phase 1).
+# On codec embeddings expect a larger optimal offset than APC's mel sweet spot
+# (n~3), since codec embeddings are temporally smoother — sweep this.
+model:
+  hidden: 512
+  layers: 3
+  offsets: [3]        # try e.g. [1, 3, 5] for Multi-Target APC and sweep upward
+  dropout: 0.0
+train:
+  lr: 1.0e-3
+  window: 256
+  batch_size: 8
+  max_steps: 200

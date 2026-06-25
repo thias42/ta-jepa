@@ -1,0 +1,74 @@
+# ta-jepa
+
+**Temporally-controlled general-purpose audio JEPA** — a causal, action-conditioned latent
+world model for general audio (music, environmental sound, speech). It predicts *future*
+audio representations in embedding space and steers that prediction with control signals: the
+audio analogue of an action-conditioned V-JEPA, not a static representation learner.
+
+- Design rationale, phases, evaluation, novelty: [`docs/temporal-audio-jepa-plan.md`](docs/temporal-audio-jepa-plan.md)
+- Quick-reference invariants & commands for contributors (incl. Claude): [`CLAUDE.md`](CLAUDE.md)
+
+## Status — Phase 0 (scaffolding & baselines)
+
+In progress. What's implemented and verified end-to-end:
+
+- **Codec frontend** — frozen EnCodec, continuous *pre-quantizer* embeddings (75 Hz, dim 128).
+- **Offline embedding cache** — `[T, D]` `.npy` per clip + `meta.yaml`.
+- **APC baseline** — causal LSTM + residual + multi-offset time-shift, L1 on the actual
+  frame; includes a naive persistence baseline (the bar Phase 1 must beat).
+- **Log-mel frontend** — for the A-JEPA-comparable baseline.
+- **Collapse diagnostics** — feature std / effective rank, wired into training.
+- **Data plumbing** — JSONL manifests (with class label / CV fold), audio +
+  cached-embedding datasets (incl. a label-joined `ManifestEmbeddingDataset` for probes),
+  synthetic data generator for smoke-testing.
+- **ESC-50** — first real dataset wired in: `scripts/prepare_esc50.py` downloads, extracts,
+  and builds a manifest (2000 clips, 50 environmental classes, official 5 folds → train/val/
+  test splits). Held out for environmental eval, per the plan.
+
+Sanity check on the synthetic set: APC reaches L1 ≈ 1.68 vs persistence ≈ 2.52 at offset 3.
+
+Still open in Phase 0: more datasets (AudioSet / FMA / MTG-Jamendo for pretraining), an
+A-JEPA-style mel baseline trainer, and the X-ARES linear-probe eval.
+
+## Setup
+
+Uses a conda env on Python 3.11 (see `CLAUDE.md` for why pyenv 3.11.4 is unusable here).
+
+```bash
+conda create -y -n ta-jepa python=3.11
+conda run -n ta-jepa pip install -e ".[dev]"
+```
+
+## Quickstart (synthetic, runs on CPU)
+
+```bash
+P=$(conda run -n ta-jepa which python)
+$P scripts/make_synthetic_data.py --per-domain 4
+$P scripts/build_manifest.py --root data/synthetic/music --domain music \
+    --root data/synthetic/environmental --domain environmental \
+    --root data/synthetic/speech --domain speech --out data/manifests/synthetic.jsonl
+$P scripts/extract_embeddings.py --manifest data/manifests/synthetic.jsonl \
+    --cache data/cache/encodec_24khz/synthetic --device cpu
+$P scripts/train_apc.py --cache data/cache/encodec_24khz/synthetic --offsets 1 3
+```
+
+## Real data: ESC-50 (environmental eval)
+
+```bash
+P=$(conda run -n ta-jepa which python)
+$P scripts/prepare_esc50.py                      # download + extract + manifest
+$P scripts/extract_embeddings.py \
+    --manifest data/manifests/esc50.jsonl \
+    --cache data/cache/encodec_24khz/esc50 --device cpu
+```
+
+`ManifestEmbeddingDataset(manifest, cache, split="train")` then yields cached features joined
+to integer-encoded class labels and CV folds — the input to the X-ARES-style linear probe.
+
+## Tests
+
+```bash
+conda run -n ta-jepa pytest -q
+# include the EnCodec download/shape test:
+TAJEPA_RUN_CODEC_TESTS=1 conda run -n ta-jepa pytest -q
+```

@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tajepa"
+version = "0.0.1"
+description = "Temporally-controlled general-purpose audio JEPA — a causal, action-conditioned latent world model for audio."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "MIT" }
+
+# Core runtime deps for Phase 0 (scaffolding + baselines + codec frontend).
+# Phase 2 descriptor extraction (madmom / CREPE) is intentionally deferred.
+dependencies = [
+    "torch>=2.2",
+    "torchaudio>=2.2",
+    "transformers>=4.40",      # provides EnCodec (facebook/encodec_*)
+    "pytorch-lightning>=2.2",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "soundfile>=0.12",
+    "librosa>=0.10",           # mel baseline + (later) descriptors
+    "einops>=0.7",
+    "tqdm>=4.66",
+    "tensorboard>=2.15",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+# Descript Audio Codec, as an alternative codec frontend to EnCodec.
+dac = ["descript-audio-codec>=1.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

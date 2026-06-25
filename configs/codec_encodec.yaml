@@ -1,0 +1,11 @@
+# Default codec frontend: EnCodec 24 kHz.
+# Chosen as the Phase 0 default for being causal-friendly, HF-native, and low
+# frame rate (75 Hz) — matching the streaming/causal design commitment. Swap
+# `name`/`hf_model_id` for a DAC frontend once registered; callers don't change.
+codec:
+  name: encodec_24khz
+  hf_model_id: facebook/encodec_24khz
+  sample_rate: 24000
+  expected_frame_rate: 75.0
+  expected_embedding_dim: 128
+  device: auto

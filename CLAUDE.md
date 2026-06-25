@@ -8,8 +8,8 @@ space and steers that prediction with control signals: the audio analogue of an
 action-conditioned V-JEPA, not a static representation learner.
 
 The full design rationale, phase plan, evaluation, and novelty framing live in
-`temporal-audio-jepa-plan.md`. **Read it before making architectural decisions** — this file
-is the quick-reference; the plan is the source of truth.
+`docs/temporal-audio-jepa-plan.md`. **Read it before making architectural decisions** — this
+file is the quick-reference; the plan is the source of truth.
 
 Status (as of this writing): pre-implementation. The repo contains only the plan. There is no
 code, no git history, and no environment yet.
@@ -76,9 +76,60 @@ PyTorch Lightning · EnCodec/DAC (HF) · madmom / librosa / CREPE for descriptor
 AudioSet + FMA/MTG-Jamendo + ESC-50/UrbanSound. Start small — cached codec embeddings plus
 the A-JEPA efficiency result mean Phase 1 doesn't need large compute to be informative.
 
+## Environment & commands
+
+Python 3.11 in the **conda env `ta-jepa`** (the pyenv 3.11.4 build is broken — no `ssl`
+module — do not use it). Interpreter:
+`/Users/matthias/miniconda3/envs/ta-jepa/bin/python`. The package is installed editable
+(`pip install -e .`). Audio I/O uses `soundfile`, NOT `torchaudio.load` (recent torchaudio
+delegates decoding to TorchCodec/FFmpeg, which we deliberately avoid — see `data/io.py`).
+
+```bash
+P=/Users/matthias/miniconda3/envs/ta-jepa/bin/python
+$P -m pytest -q                                   # fast tests (codec test gated behind env var)
+TAJEPA_RUN_CODEC_TESTS=1 $P -m pytest -q           # include EnCodec download/shape test
+
+# End-to-end Phase 0 pipeline (synthetic data -> codec cache -> APC):
+$P scripts/make_synthetic_data.py --per-domain 4
+$P scripts/build_manifest.py --root data/synthetic/music --domain music \
+    --root data/synthetic/environmental --domain environmental \
+    --root data/synthetic/speech --domain speech --out data/manifests/synthetic.jsonl
+$P scripts/extract_embeddings.py --manifest data/manifests/synthetic.jsonl \
+    --cache data/cache/encodec_24khz/synthetic --device cpu
+$P scripts/train_apc.py --cache data/cache/encodec_24khz/synthetic --offsets 1 3
+
+# Real data — ESC-50 (environmental, held-out eval; ~616 MB download):
+$P scripts/prepare_esc50.py                        # download + extract + manifest
+$P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
+    --cache data/cache/encodec_24khz/esc50 --device cpu
+```
+
+## Datasets
+
+- **ESC-50** is the first real dataset wired in (smallest of the plan's sets). `prepare_esc50.py`
+  → `data/manifests/esc50.jsonl` with `label` (class) + `fold` (official 5-fold CV) on every
+  entry; folds map 1-3→train, 4→val, 5→test but `fold` is preserved for proper CV. Held out
+  for environmental eval — do NOT pretrain on it. `ManifestEmbeddingDataset` joins cached
+  features to labels for the probe.
+- Pretraining sets (AudioSet / FMA / MTG-Jamendo) are not yet wired. Large `data/` artifacts
+  (downloads, extracted audio, caches) are gitignored (anchored `/data/`).
+
+## Repo layout (Phase 0)
+
+- `src/tajepa/codec/` — frozen codec frontend (`EncodecFrontend`, registry) + offline
+  embedding caching (`extract.py`). **Continuous pre-quantizer embeddings only.**
+- `src/tajepa/features/mel.py` — log-mel frontend for the A-JEPA-comparable baseline.
+- `src/tajepa/models/apc.py` — APC baseline + `persistence_l1` (the bar Phase 1 must beat).
+- `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
+  into training now so the path carries into Phase 1.
+- `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.
+- `scripts/` — runnable CLIs; `configs/` — YAML for codec / APC / mel.
+
 ## Working conventions
 
-- No build/test/lint commands exist yet. Once an environment is set up, record the canonical
-  commands here.
-- Cache codec embeddings offline so experiments iterate fast.
-- Keep collapse diagnostics wired into every training run from the first commit.
+- Cache codec embeddings offline (`extract_embeddings.py`) so the model side iterates fast.
+- Keep collapse diagnostics (`diagnostics.py`) wired into every training run.
+- Default codec is **EnCodec 24 kHz** (causal-friendly, 75 Hz, HF-native); the frontend is a
+  registry so DAC drops in behind the same interface.
+- Synthetic data (`make_synthetic_data.py`) is for pipeline smoke-testing ONLY — never for
+  evaluation. Real eval is X-ARES on AudioSet/FMA/ESC-50 etc.

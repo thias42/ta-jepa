@@ -1,0 +1,12 @@
+# Log-mel frontend for the A-JEPA-comparable baseline (and APC-on-mel sanity check).
+# hop_length=320 @ 24 kHz -> ~75 Hz frames, matching the EnCodec frame rate so the
+# two frontends are interchangeable downstream.
+mel:
+  sample_rate: 24000
+  n_fft: 1024
+  hop_length: 320
+  n_mels: 80
+  f_min: 0.0
+  f_max: null
+  log_offset: 1.0e-6
+  normalize: true

@@ -56,10 +56,11 @@ checkpoints/
 
 # ---- Data, caches & generated audio ----
 # Raw datasets and cached codec embeddings are large — keep them out of git.
-data/
-datasets/
-cache/
-embeddings/
+# Anchored to repo root so they don't shadow the src/tajepa/data package.
+/data/
+/datasets/
+/cache/
+/embeddings/
 *.wav
 *.flac
 *.mp3
