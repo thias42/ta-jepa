@@ -44,14 +44,30 @@ def extract_manifest(
             pass
 
     n_written = 0
+    n_skipped = 0
+    failures: list[dict] = []
     for entry in iterator:
         out_path = cache_dir / f"{entry.clip_id}.npy"
         if out_path.exists() and not overwrite:
+            n_skipped += 1
             continue
-        wav = load_resampled(entry.path, frontend.sample_rate)    # [1, N]
-        emb = frontend.encode(wav.unsqueeze(0))                    # [1, T, D]
-        np.save(out_path, emb.squeeze(0).cpu().numpy().astype(np.float32))
-        n_written += 1
+        # Resilient per-clip: real datasets (e.g. FMA) ship a handful of corrupt
+        # files; one bad clip must not abort a multi-hour run.
+        try:
+            wav = load_resampled(entry.path, frontend.sample_rate)    # [1, N]
+            emb = frontend.encode(wav.unsqueeze(0))                   # [1, T, D]
+            np.save(out_path, emb.squeeze(0).cpu().numpy().astype(np.float32))
+            n_written += 1
+        except Exception as e:  # noqa: BLE001 - want to keep going past any decode/encode error
+            failures.append({"clip_id": entry.clip_id, "path": entry.path, "error": repr(e)})
+
+    if failures:
+        import json
+
+        with open(cache_dir / "failures.jsonl", "w") as f:
+            for rec in failures:
+                f.write(json.dumps(rec) + "\n")
+        print(f"WARNING: {len(failures)} clip(s) failed; see {cache_dir / 'failures.jsonl'}")
 
     meta = {
         "codec": cfg.name,
@@ -61,6 +77,8 @@ def extract_manifest(
         "embedding_dim": frontend.embedding_dim,
         "n_clips": len(entries),
         "n_written": n_written,
+        "n_skipped_existing": n_skipped,
+        "n_failed": len(failures),
         "source_manifest": str(Path(manifest_path).resolve()),
     }
     save_yaml(meta, cache_dir / "meta.yaml")

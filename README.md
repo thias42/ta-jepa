@@ -21,14 +21,17 @@ In progress. What's implemented and verified end-to-end:
 - **Data plumbing** — JSONL manifests (with class label / CV fold), audio +
   cached-embedding datasets (incl. a label-joined `ManifestEmbeddingDataset` for probes),
   synthetic data generator for smoke-testing.
-- **ESC-50** — first real dataset wired in: `scripts/prepare_esc50.py` downloads, extracts,
-  and builds a manifest (2000 clips, 50 environmental classes, official 5 folds → train/val/
-  test splits). Held out for environmental eval, per the plan.
+- **ESC-50** — environmental eval set: `scripts/prepare_esc50.py` downloads, extracts, and
+  builds a manifest (2000 clips, 50 classes, official 5 folds → train/val/test). Held out.
+- **FMA-small** — music *pretraining* source: `scripts/prepare_fma.py` extracts and builds a
+  manifest (8000 30 s mp3 tracks, 8 genres, official splits; `genre_top` kept as a label).
+  Extraction is resilient to FMA's known-corrupt mp3s (failures logged, run continues).
 
 Sanity check on the synthetic set: APC reaches L1 ≈ 1.68 vs persistence ≈ 2.52 at offset 3.
 
-Still open in Phase 0: more datasets (AudioSet / FMA / MTG-Jamendo for pretraining), an
-A-JEPA-style mel baseline trainer, and the X-ARES linear-probe eval.
+Still open in Phase 0: more pretraining data (AudioSet / MTG-Jamendo), an A-JEPA-style mel
+baseline trainer, and using FMA-pretrained representations in the probe (vs the codec
+baseline below).
 
 ## Setup
 
@@ -64,6 +67,16 @@ $P scripts/extract_embeddings.py \
 
 `ManifestEmbeddingDataset(manifest, cache, split="train")` then yields cached features joined
 to integer-encoded class labels and CV folds — the input to the X-ARES-style linear probe.
+
+## Real data: FMA-small (music pretraining)
+
+```bash
+P=$(conda run -n ta-jepa which python)
+$P scripts/prepare_fma.py --download             # ~7.5 GB; or place zips in data/downloads/
+$P scripts/extract_embeddings.py \
+    --manifest data/manifests/fma_small.jsonl \
+    --cache data/cache/encodec_24khz/fma_small --device cpu
+```
 
 ## Tests
 

@@ -111,8 +111,14 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   entry; folds map 1-3→train, 4→val, 5→test but `fold` is preserved for proper CV. Held out
   for environmental eval — do NOT pretrain on it. `ManifestEmbeddingDataset` joins cached
   features to labels for the probe.
-- Pretraining sets (AudioSet / FMA / MTG-Jamendo) are not yet wired. Large `data/` artifacts
-  (downloads, extracted audio, caches) are gitignored (anchored `/data/`).
+- **FMA-small** is wired as the music *pretraining* source. `prepare_fma.py` →
+  `data/manifests/fma_small.jsonl` (8000 30 s mp3 tracks, 8 genres, official splits;
+  `genre_top` as label). FMA zips are **bzip2** — system `unzip` fails ("PK compat v4.6");
+  use Python `zipfile` (the script does) or `7zz`. mp3 decode is via soundfile/libsndfile
+  (ffmpeg present as fallback). Embedding extraction is resilient to per-file failures
+  (FMA ships a few corrupt mp3s) — failures go to `failures.jsonl` in the cache dir.
+- Still unwired: AudioSet / MTG-Jamendo. Large `data/` artifacts (downloads, extracted
+  audio, caches) are gitignored (anchored `/data/`).
 
 ## Repo layout (Phase 0)
 
