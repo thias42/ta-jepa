@@ -67,6 +67,7 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=200)
     ap.add_argument("--num-workers", type=int, default=0)
     ap.add_argument("--accelerator", default="auto")
+    ap.add_argument("--save", type=Path, default=None, help="Write final checkpoint here.")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -92,6 +93,11 @@ def main() -> None:
         default_root_dir="lightning_logs/apc",
     )
     trainer.fit(model, loader)
+
+    if args.save:
+        args.save.parent.mkdir(parents=True, exist_ok=True)
+        trainer.save_checkpoint(str(args.save))
+        print(f"Saved checkpoint to {args.save}")
 
 
 if __name__ == "__main__":
