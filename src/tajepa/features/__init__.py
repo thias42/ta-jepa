@@ -1,3 +1,4 @@
 from .mel import LogMelFrontend
+from .descriptors import DescriptorFrontend
 
-__all__ = ["LogMelFrontend"]
+__all__ = ["LogMelFrontend", "DescriptorFrontend"]

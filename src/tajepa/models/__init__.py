@@ -10,6 +10,7 @@ from .jepa import (
     latent_persistence_l1,
     causal_mask,
 )
+from .control import ControllableJEPA, ControllablePredictor, FiLM
 
 __all__ = [
     "APCModel",
@@ -26,4 +27,7 @@ __all__ = [
     "grounding_loss",
     "latent_persistence_l1",
     "causal_mask",
+    "ControllableJEPA",
+    "ControllablePredictor",
+    "FiLM",
 ]

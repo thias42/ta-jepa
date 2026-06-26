@@ -137,6 +137,15 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   L1 vs persistence (the gate). Probe via `JEPARepresentation` on cached codec embeddings.
 - `src/tajepa/extract.py` — generic feature-cache core; `codec/extract.py` (codec) and
   `extract_mel.py` (log-mel) both delegate to it.
+- `src/tajepa/features/descriptors.py` + `src/tajepa/models/control.py` — **Phase 2a control**:
+  frame-aligned MIR descriptors (loudness/centroid/onset; pitch/voicing optional) as control
+  signals, and a `ControllableJEPA` whose predictor heads are FiLM-conditioned on the
+  descriptor *delta* (control = transition modulation; FiLM zero-init so it starts as an
+  unconditioned JEPA). `train_control.py` trains it on a `PairedSequenceDataset` (codec +
+  descriptors). Verified: perturbing a descriptor delta steers the decoded prediction
+  monotonically. Still TODO: closed-loop controllability eval (render audio, re-extract MIR,
+  check intended attribute moved + others held — the plan's disentanglement test) and 2b
+  (learned latent actions / VQ).
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.

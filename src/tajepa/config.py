@@ -60,6 +60,23 @@ class MelConfig:
     normalize: bool = True                 # per-feature standardization at train time
 
 
+@dataclass
+class DescriptorConfig:
+    """Frame-aligned MIR descriptors for supervised control (Phase 2a).
+
+    Domain-general, interpretable control axes. ``names`` selects which to compute;
+    the fast trio (loudness / centroid / onset) is the default. ``pitch`` + ``voicing``
+    use pyin (accurate but slow) — enable when caching for real control runs.
+    """
+
+    sample_rate: int = 24000
+    hop_length: int = 320          # ~75 Hz frames @ 24 kHz, aligned with the codec rate
+    n_fft: int = 1024
+    names: tuple[str, ...] = ("loudness", "centroid", "onset")
+    fmin_hz: float = 65.0          # ~C2, for pitch
+    fmax_hz: float = 2093.0        # ~C7
+
+
 def resolve_device(device: str = "auto") -> str:
     import torch
 

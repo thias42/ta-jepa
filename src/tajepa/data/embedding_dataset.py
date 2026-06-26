@@ -109,6 +109,57 @@ class ManifestEmbeddingDataset(Dataset):
         }
 
 
+class PairedSequenceDataset(Dataset):
+    """Serves aligned ``features`` (codec) + ``control`` (descriptors) windows per clip.
+
+    For Phase 2a control training: reads two caches keyed by clip id, crops the *same*
+    time window from both (truncating to the common length, since framing can differ by a
+    frame), and returns both. Frame rates must match (both 75 Hz here).
+    """
+
+    def __init__(
+        self,
+        feature_dir: str | Path | list[str | Path],
+        control_dir: str | Path | list[str | Path],
+        window_frames: int = 256,
+        random_crop: bool = True,
+        pattern: str = "*.npy",
+    ) -> None:
+        def collect(dirs):
+            dirs = [dirs] if isinstance(dirs, (str, Path)) else list(dirs)
+            ids: dict[str, Path] = {}
+            for d in dirs:
+                ids.update({p.stem: p for p in Path(d).rglob(pattern)})
+            return ids
+
+        feat_ids = collect(feature_dir)
+        ctrl_ids = collect(control_dir)
+        self.ids = sorted(set(feat_ids) & set(ctrl_ids))
+        if not self.ids:
+            raise FileNotFoundError(
+                f"No overlapping clip ids between feature dir(s) {feature_dir} "
+                f"and control dir(s) {control_dir}")
+        self.feat = feat_ids
+        self.ctrl = ctrl_ids
+        self.window_frames = window_frames
+        self.random_crop = random_crop
+
+    def __len__(self) -> int:
+        return len(self.ids)
+
+    def __getitem__(self, idx: int) -> dict:
+        cid = self.ids[idx]
+        x = torch.from_numpy(np.load(self.feat[cid])).float()
+        c = torch.from_numpy(np.load(self.ctrl[cid])).float()
+        t = min(x.shape[0], c.shape[0])
+        x, c = x[:t], c[:t]
+        w = self.window_frames
+        if t > w:
+            start = int(torch.randint(0, t - w + 1, (1,)).item()) if self.random_crop else 0
+            x, c = x[start : start + w], c[start : start + w]
+        return {"features": x, "control": c, "length": x.shape[0], "clip_id": cid}
+
+
 def pad_collate(batch: list[dict]) -> dict:
     """Collate variable-length ``[T, D]`` windows into a padded ``[B, T, D]`` batch
     plus a boolean ``pad_mask`` (True where padded)."""
@@ -121,9 +172,16 @@ def pad_collate(batch: list[dict]) -> dict:
     for i, f in enumerate(feats):
         out[i, : f.shape[0]] = f
         pad_mask[i, : f.shape[0]] = False
-    return {
+    collated = {
         "features": out,
         "lengths": lengths,
         "pad_mask": pad_mask,
         "clip_id": [b["clip_id"] for b in batch],
     }
+    if "control" in batch[0]:                       # paired (Phase 2a) batches
+        cd = batch[0]["control"].shape[1]
+        ctrl = torch.zeros(len(batch), t_max, cd)
+        for i, b in enumerate(batch):
+            ctrl[i, : b["control"].shape[0]] = b["control"]
+        collated["control"] = ctrl
+    return collated

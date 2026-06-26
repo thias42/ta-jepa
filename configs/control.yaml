@@ -1,0 +1,23 @@
+# Phase 2a — controllable JEPA (descriptor-delta FiLM conditioning).
+# Same causal encoder + EMA target + VICReg as Phase 1, plus FiLM control.
+descriptors:
+  # Fast trio by default; add pitch + voicing (pyin, slower) for the full control set.
+  names: [loudness, centroid, onset]
+  hop_length: 320      # 75 Hz, aligned with the codec frame rate
+model:
+  dim: 256
+  enc_depth: 6
+  pred_depth: 3
+  heads: 4
+  offsets: [1, 2, 4, 8]
+loss:
+  var_coef: 1.0
+  cov_coef: 0.04
+  grounding_coef: 1.0  # anchor the latent to the codec (helps, per Phase 1 iteration #1)
+train:
+  lr: 2.0e-4
+  weight_decay: 0.05
+  base_momentum: 0.996
+  window: 256
+  batch_size: 32
+  max_steps: 20000

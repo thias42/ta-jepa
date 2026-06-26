@@ -9,6 +9,7 @@ from .audio_dataset import AudioChunkDataset
 from .embedding_dataset import (
     EmbeddingSequenceDataset,
     ManifestEmbeddingDataset,
+    PairedSequenceDataset,
     pad_collate,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "AudioChunkDataset",
     "EmbeddingSequenceDataset",
     "ManifestEmbeddingDataset",
+    "PairedSequenceDataset",
     "pad_collate",
 ]
