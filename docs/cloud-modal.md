@@ -97,6 +97,31 @@ modal run modal_app.py::evaluate --eval-kind forecast --dataset esc50 \
 Then compare the ESC-50 forecasting curve to the FMA-only run — that's the test of whether
 broadening the data closes the transfer gap. (Locally: `train_*.py --cache dirA dirB ...`.)
 
+## Phase 2a: controllable JEPA (supervised descriptor control)
+
+Cache descriptors (the control signals) alongside the codec embeddings, train the
+controllable JEPA, then run the closed-loop controllability eval.
+
+```bash
+# 1) Descriptor caches (control signals) for train sets + the eval set:
+modal run modal_app.py::extract --dataset fma_small --frontend descriptors
+modal run modal_app.py::extract --dataset fsd50k    --frontend descriptors
+modal run modal_app.py::extract --dataset esc50     --frontend descriptors
+
+# 2) Train the controllable JEPA (multi-domain; needs codec + descriptor caches for each):
+modal run --detach modal_app.py::train_control --dataset fma_small,fsd50k \
+    --save-name control_multi --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 \
+    --grounding-coef 1.0 --max-steps 25000"
+
+# 3) Closed-loop controllability eval on ESC-50 (renders + re-measures; prints the matrix):
+modal run modal_app.py::control_eval --dataset esc50 --ckpt control_multi \
+    --extra-args "--offset 1 --bump 2.0 --n-clips 100"
+```
+
+The eval prints the controllability matrix `M[perturbed, measured]` and the disentanglement
+summary — diagonal positive (each control raises its own descriptor) and dominance ratio
+(how cleanly separated the controls are). A well-trained model should be diagonally dominant.
+
 ## Adding another dataset
 
 1. Write `scripts/prepare_<name>.py` → `data/manifests/<name>.jsonl` (mirror the existing

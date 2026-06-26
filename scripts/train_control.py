@@ -98,7 +98,7 @@ class ControlLightning(pl.LightningModule):
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--features", type=Path, required=True, nargs="+", help="Codec cache dir(s).")
-    ap.add_argument("--control", type=Path, required=True, help="Descriptor cache dir.")
+    ap.add_argument("--control", type=Path, required=True, nargs="+", help="Descriptor cache dir(s).")
     ap.add_argument("--dim", type=int, default=256)
     ap.add_argument("--enc-depth", type=int, default=6)
     ap.add_argument("--pred-depth", type=int, default=3)
@@ -122,7 +122,8 @@ def main() -> None:
 
     seed_everything(args.seed)
     feature_dirs = args.features if len(args.features) > 1 else args.features[0]
-    ds = PairedSequenceDataset(feature_dirs, args.control, window_frames=args.window)
+    control_dirs = args.control if len(args.control) > 1 else args.control[0]
+    ds = PairedSequenceDataset(feature_dirs, control_dirs, window_frames=args.window)
     in_dim = ds[0]["features"].shape[-1]
     cond_dim = ds[0]["control"].shape[-1]
     print(f"Dataset: {len(ds)} clips, in_dim={in_dim}, cond_dim={cond_dim}, offsets={args.offsets}")

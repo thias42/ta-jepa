@@ -194,6 +194,42 @@ def train(
     print(f"DONE train: {save_name} -> R2 runs/{save_name}.ckpt")
 
 
+@app.function(image=image, secrets=[r2_secret], gpu=TRAIN_GPU,
+              ephemeral_disk=DISK_MIB, timeout=8 * 3600)
+def train_control(dataset: str, save_name: str = "", extra_args: str = "") -> None:
+    """Phase 2a: train the controllable JEPA on codec + descriptor caches from R2.
+
+    Needs both ``cache/encodec_24khz/<d>.tar`` and ``cache/descriptors/<d>.tar`` for each
+    dataset (run ``extract`` with ``--frontend encodec_24khz`` and ``--frontend
+    descriptors`` first). ``dataset`` may be comma-separated for multi-domain.
+    """
+    datasets = [d.strip() for d in dataset.split(",") if d.strip()]
+    save_name = save_name or f"control_{'_'.join(datasets)}"
+    feat_dirs = [_download_tar(f"cache/encodec_24khz/{d}.tar", f"{SCRATCH}/cache/encodec_24khz")
+                 for d in datasets]
+    ctrl_dirs = [_download_tar(f"cache/descriptors/{d}.tar", f"{SCRATCH}/cache/descriptors")
+                 for d in datasets]
+    ckpt = f"{SCRATCH}/runs/{save_name}.ckpt"
+    cmd = ["python", f"{REPO}/scripts/train_control.py",
+           "--features", *feat_dirs, "--control", *ctrl_dirs,
+           "--accelerator", "gpu", "--save", ckpt, *shlex.split(extra_args)]
+    _run(cmd)
+    _upload(ckpt, f"runs/{save_name}.ckpt")
+    print(f"DONE train_control: {save_name} -> R2 runs/{save_name}.ckpt")
+
+
+@app.function(image=image, secrets=[r2_secret], gpu=EVAL_GPU, timeout=2 * 3600)
+def control_eval(dataset: str, ckpt: str, extra_args: str = "") -> None:
+    """Closed-loop controllability eval: render + re-measure (prints the matrix)."""
+    feat = _download_tar(f"cache/encodec_24khz/{dataset}.tar", f"{SCRATCH}/cache/encodec_24khz")
+    ctrl = _download_tar(f"cache/descriptors/{dataset}.tar", f"{SCRATCH}/cache/descriptors")
+    local_ckpt = f"{SCRATCH}/runs/{ckpt}.ckpt"
+    _download(f"runs/{ckpt}.ckpt", local_ckpt)
+    cmd = ["python", f"{REPO}/scripts/run_controllability.py",
+           "--ckpt", local_ckpt, "--features", feat, "--control", ctrl, *shlex.split(extra_args)]
+    _run(cmd)
+
+
 @app.function(image=image, secrets=[r2_secret], gpu=EVAL_GPU, timeout=2 * 3600)
 def evaluate(
     eval_kind: str, dataset: str, frontend: str = "encodec_24khz",
