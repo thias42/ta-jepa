@@ -204,6 +204,32 @@ Next extensions of this eval: add APC and the codec baseline as comparison curve
 forecasts codec frames directly, so it should be the strong codec-space reference);
 multi-step rollout skill (Phase 3); and decoded-audio listening tests.
 
+### Is the probe deficit domain mismatch? (No.) — in-domain control
+
+We pretrain on FMA (music) and the main probe is ESC-50 (environmental), so a natural worry
+is that the JEPA's probe deficit is just cross-domain transfer. Cheap control: probe the
+same FMA-pretrained JEPA *in-domain* on FMA genre (it has genre labels), vs codec.
+
+| Representation | FMA genre (in-domain) | ESC-50 (transfer) |
+|---|---|---|
+| codec baseline | 42.0% | 54.4% |
+| grounded JEPA | 31.1% | 48.4% |
+
+(FMA: 2500-train/800-test single split, 8 genres, meanstd — not CV, but internally
+consistent.) The JEPA underperforms codec **in-domain too**, by an even *larger* margin
+(−11 pts vs −6 on ESC-50). So the probe deficit is **not** domain mismatch — it is the
+temporal-smoothness/metric effect, present in both domains. **Broadening training data
+would not fix the probe number.**
+
+Two distinct things, don't conflate them:
+- **Probe/representation-quality deficit** → a *metric* effect (smooth latent vs std-pooling),
+  domain-independent. Fix: better evals (this section's direction), not more data.
+- **Codec-space forecasting transfer** (in-domain FMA positive, ESC-50 negative) → a *decoder*
+  generalization effect that *is* domain-dependent. More-diverse training data would help
+  this — and is the plan's intent anyway (general audio, not music-only; we trained FMA-only
+  for compute). So broaden data to serve the general-audio thesis and forecasting transfer,
+  **not** as a probe fix.
+
 Per-fold (CV) for reference:
 
 | | f1 | f2 | f3 | f4 | f5 |
