@@ -200,9 +200,55 @@ forecast the raw fingerprint of *unfamiliar* sounds — but that raw fingerprint
 and nearly unpredictable anyway, which is the whole reason we predict the smoothed "gist"
 instead.
 
-Next extensions of this eval: add APC and the codec baseline as comparison curves (APC
-forecasts codec frames directly, so it should be the strong codec-space reference);
-multi-step rollout skill (Phase 3); and decoded-audio listening tests.
+### Cross-model curves — persistence vs APC vs JEPA (codec space)
+
+`codec_forecast_curves` puts all three on the same axes (globally-standardized codec space,
+so they're directly comparable; cosine of predicted vs true future frame). APC predicts
+codec frames directly (the strong reference); JEPA decodes its predicted latent; persistence
+is the codec baseline. Each model at its own trained offsets. (Note: this uses *global*
+standardization, vs the *per-clip* standardization in the single-model table above — hence
+slightly different absolute cosines; conclusions agree.)
+
+**ESC-50 (transfer)** — cosine, with gain over persistence:
+
+| k | persistence | APC | JEPA |
+|---|---|---|---|
+| 1 | 0.565 | 0.671 (**+0.107**) | 0.516 (−0.049) |
+| 3 | 0.531 | 0.639 (**+0.107**) | — |
+| 4 | 0.515 | — | 0.465 (−0.050) |
+| 8 | 0.490 | — | 0.448 (−0.043) |
+
+**FMA (in-domain)** — cosine, with gain over persistence:
+
+| k | persistence | APC | JEPA |
+|---|---|---|---|
+| 1 | 0.398 | 0.582 (**+0.184**) | 0.540 (**+0.142**) |
+| 2 | 0.353 | — | 0.479 (**+0.126**) |
+| 3 | 0.333 | 0.484 (**+0.151**) | — |
+| 4 | 0.313 | — | 0.440 (**+0.127**) |
+| 8 | 0.284 | — | 0.412 (**+0.128**) |
+
+JEPA latent-space skill (own space): ESC-50 +17/+34/+45/+41%, FMA +13/+23/+32/+30%
+(k=1/2/4/8) — strongly positive in *both* domains.
+
+**What the cross-model benchmark shows:**
+
+1. **In-domain, the JEPA is a genuine forecaster** — it beats persistence at every horizon
+   (+0.13 cosine, flat across k), competitive with APC and *more stable* over the horizon
+   (APC is only defined at 1/3/5). This vindicates the model on the metric a world model is
+   actually for, after the probe (the wrong yardstick) made it look broken.
+2. **The transfer gap is the decoder, not the predictor.** On ESC-50, APC's frame-forecast
+   still beats persistence (+0.11; "predict something like recent frames" transfers), while
+   JEPA's *decoded* forecast falls below (−0.05). But the JEPA's *latent* skill stays strongly
+   positive on ESC-50 (+17–45%) — so the encoder's dynamics-prediction transfers fine; only
+   the music-trained grounding-head decoder doesn't. → broadening training data targets
+   exactly this (the domain-dependent part), consistent with the earlier conclusion.
+3. The probe deficit (separate, metric-driven) and this forecasting-transfer gap
+   (decoder/data) are **two different issues** — and on the forecasting metric, in-domain,
+   the JEPA is not deficient at all.
+
+Next extensions: multi-step rollout skill (Phase 3); broaden training data (FSD50K/AudioSet)
+and re-check forecasting transfer; decoded-audio listening tests.
 
 ### Is the probe deficit domain mismatch? (No.) — in-domain control
 

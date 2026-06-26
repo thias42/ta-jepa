@@ -3,8 +3,9 @@ import copy
 import torch
 from torch.utils.data import Dataset
 
+from tajepa.models.apc import APCModel
 from tajepa.models.jepa import JEPA, jepa_loss, grounding_loss
-from tajepa.eval import forecast_report
+from tajepa.eval import forecast_report, codec_forecast_curves
 
 
 class _ToyDS(Dataset):
@@ -63,3 +64,19 @@ def test_forecast_improves_after_training_toward_persistence_plus():
     seqs = [x[i] for i in range(x.shape[0])]
     rep = forecast_report(model, target, _ToyDS(seqs), device="cpu")
     assert rep[1]["codec_cos_gain"] > 0
+
+
+def test_codec_forecast_curves_multimodel():
+    torch.manual_seed(0)
+    d = 16
+    jepa = JEPA(in_dim=d, dim=32, enc_depth=1, pred_depth=1, heads=4, offsets=(1, 2))
+    apc = APCModel(input_dim=d, hidden_dim=32, num_layers=1, offsets=(1, 3))
+    seqs = [torch.cumsum(0.1 * torch.randn(50, d), dim=0) for _ in range(5)]
+    curves = codec_forecast_curves(_ToyDS(seqs), device="cpu", jepa=jepa, apc=apc, stats_clips=5)
+
+    assert set(curves) == {"persistence", "APC", "JEPA"}
+    assert set(curves["JEPA"]) == {1, 2}            # each model at its own offsets
+    assert set(curves["APC"]) == {1, 3}
+    assert set(curves["persistence"]) == {1, 2, 3}  # union
+    for k, m in curves["persistence"].items():
+        assert -1.0 <= m["cos"] <= 1.0
