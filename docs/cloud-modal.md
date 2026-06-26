@@ -81,12 +81,21 @@ AudioSet stand-in). The image includes `p7zip` for its multi-part split archives
 modal run modal_app.py::extract --dataset fsd50k --frontend encodec_24khz   # ~24 GB download on Modal
 ```
 
-**Multi-domain training** (FMA music + FSD50K general) currently needs the two caches
-combined — the training scripts take a single `--cache` dir. Cleanest fix is to let
-`EmbeddingSequenceDataset` accept multiple cache dirs (small change); until then, point
-training at one or merge the `.npy` dirs (clip ids don't collide: FMA = 6-digit, FSD50K =
-Freesound ids). Once combined, `train --model jepa --dataset <combined>` as above, then
-re-run the forecasting eval on ESC-50 to check whether the transfer gap closes.
+**Multi-domain training** (FMA music + FSD50K general) is supported directly — pass a
+comma-separated `--dataset`; each cache is pulled from R2 and handed to training as a
+separate `--cache` dir:
+
+```bash
+modal run modal_app.py::extract --dataset fsd50k                       # one-time, ~24 GB on Modal
+modal run modal_app.py::train --model jepa --dataset fma_small,fsd50k \
+    --save-name jepa_multi --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 \
+    --grounding-coef 1.0 --max-steps 25000"
+modal run modal_app.py::evaluate --eval-kind forecast --dataset esc50 \
+    --jepa-ckpt jepa_multi --apc-ckpt apc_fma --extra-args "--max-clips 300"
+```
+
+Then compare the ESC-50 forecasting curve to the FMA-only run — that's the test of whether
+broadening the data closes the transfer gap. (Locally: `train_*.py --cache dirA dirB ...`.)
 
 ## Adding another dataset
 

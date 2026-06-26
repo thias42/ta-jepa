@@ -56,7 +56,8 @@ class APCLightning(pl.LightningModule):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cache", type=Path, required=True, help="Dir of cached .npy features.")
+    ap.add_argument("--cache", type=Path, required=True, nargs="+",
+                    help="Dir(s) of cached .npy features (multiple = multi-domain).")
     ap.add_argument("--offsets", type=int, nargs="+", default=[3])
     ap.add_argument("--hidden", type=int, default=512)
     ap.add_argument("--layers", type=int, default=3)

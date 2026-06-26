@@ -84,7 +84,8 @@ class AJEPALightning(pl.LightningModule):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cache", type=Path, required=True, help="Dir of cached log-mel .npy.")
+    ap.add_argument("--cache", type=Path, required=True, nargs="+",
+                    help="Dir(s) of cached log-mel .npy (multiple = multi-domain).")
     ap.add_argument("--dim", type=int, default=256)
     ap.add_argument("--depth", type=int, default=6)
     ap.add_argument("--heads", type=int, default=4)

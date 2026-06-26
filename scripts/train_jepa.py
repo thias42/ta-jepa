@@ -92,7 +92,8 @@ class JEPALightning(pl.LightningModule):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cache", type=Path, required=True, help="Dir of cached codec .npy.")
+    ap.add_argument("--cache", type=Path, required=True, nargs="+",
+                    help="Dir(s) of cached codec .npy (multiple = multi-domain pretraining).")
     ap.add_argument("--dim", type=int, default=256)
     ap.add_argument("--enc-depth", type=int, default=6)
     ap.add_argument("--pred-depth", type=int, default=3)

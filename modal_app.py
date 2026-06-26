@@ -162,15 +162,22 @@ def train(
     model: str, dataset: str, frontend: str = "encodec_24khz",
     save_name: str = "", extra_args: str = "",
 ) -> None:
-    """Train ``{jepa,apc,ajepa}`` on a cached dataset from R2; upload the checkpoint."""
+    """Train ``{jepa,apc,ajepa}`` on cached dataset(s) from R2; upload the checkpoint.
+
+    ``dataset`` may be comma-separated (e.g. ``fma_small,fsd50k``) for multi-domain
+    pretraining — each cache is pulled and passed as a separate ``--cache`` dir.
+    """
     if model not in ("jepa", "apc", "ajepa"):
         raise ValueError(f"model must be jepa|apc|ajepa, got {model}")
-    save_name = save_name or f"{model}_{dataset}"
-    cache_dir = _download_tar(f"cache/{frontend}/{dataset}.tar", f"{SCRATCH}/cache/{frontend}")
+    datasets = [d.strip() for d in dataset.split(",") if d.strip()]
+    save_name = save_name or f"{model}_{'_'.join(datasets)}"
+    cache_dirs = [
+        _download_tar(f"cache/{frontend}/{d}.tar", f"{SCRATCH}/cache/{frontend}") for d in datasets
+    ]
     ckpt = f"{SCRATCH}/runs/{save_name}.ckpt"
     cmd = [
         "python", f"{REPO}/scripts/train_{model}.py",
-        "--cache", cache_dir, "--accelerator", "gpu", "--save", ckpt,
+        "--cache", *cache_dirs, "--accelerator", "gpu", "--save", ckpt,
         *shlex.split(extra_args),
     ]
     _run(cmd)

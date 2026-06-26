@@ -18,20 +18,30 @@ from .manifest import ManifestEntry, read_manifest
 
 
 class EmbeddingSequenceDataset(Dataset):
-    """Serves ``[T, D]`` windows from a directory of cached ``.npy`` feature files."""
+    """Serves ``[T, D]`` windows from cached ``.npy`` feature files.
+
+    ``cache_dir`` may be a single directory or a list of directories — the latter is how
+    multi-domain pretraining is done (e.g. point at both the FMA and FSD50K caches at
+    once). Feature dims must match across caches (same frontend).
+    """
 
     def __init__(
         self,
-        cache_dir: str | Path,
+        cache_dir: str | Path | list[str | Path],
         window_frames: int = 256,
         random_crop: bool = True,
         min_frames: int = 8,
         pattern: str = "*.npy",
     ) -> None:
-        self.cache_dir = Path(cache_dir)
-        self.files = sorted(self.cache_dir.rglob(pattern))
+        dirs = [cache_dir] if isinstance(cache_dir, (str, Path)) else list(cache_dir)
+        self.cache_dirs = [Path(d) for d in dirs]
+        self.files: list[Path] = []
+        for d in self.cache_dirs:
+            self.files.extend(sorted(d.rglob(pattern)))
+        self.files.sort()
         if not self.files:
-            raise FileNotFoundError(f"No feature files matching {pattern} under {cache_dir}")
+            roots = ", ".join(str(d) for d in self.cache_dirs)
+            raise FileNotFoundError(f"No feature files matching {pattern} under: {roots}")
         self.window_frames = window_frames
         self.random_crop = random_crop
         self.min_frames = min_frames
