@@ -49,7 +49,7 @@ app = modal.App("ta-jepa")
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("ffmpeg", "libsndfile1")
+    .apt_install("ffmpeg", "libsndfile1", "p7zip-full")  # p7zip: FSD50K split-zip archives
     .pip_install(
         "torch>=2.2", "torchaudio>=2.2", "transformers>=4.40", "pytorch-lightning>=2.2",
         "numpy>=1.24", "pyyaml>=6.0", "soundfile>=0.12", "librosa>=0.10", "einops>=0.7",
@@ -69,6 +69,7 @@ r2_secret = modal.Secret.from_name("r2-credentials")
 PREPARE = {
     "fma_small": ["python", f"{REPO}/scripts/prepare_fma.py", "--download"],
     "esc50": ["python", f"{REPO}/scripts/prepare_esc50.py"],
+    "fsd50k": ["python", f"{REPO}/scripts/prepare_fsd50k.py", "--download"],
 }
 # (frontend -> (extract script, extra args)); mel uses the config for hop/n_mels.
 EXTRACTORS = {

@@ -71,9 +71,26 @@ runs/<name>.ckpt                       # Lightning checkpoints
 - A 25k-step JEPA run is ~30–60 min on A10G ≈ a dollar or two. Extraction of a new set is
   ~1–2 GPU-hours. R2 storage of ~30 GB ≈ $0.45/month.
 
-## Adding a new dataset (e.g. FSD50K)
+## Broadening the training data: FSD50K (general audio)
 
-1. Write a `scripts/prepare_<name>.py` that downloads + builds `data/manifests/<name>.jsonl`
-   (mirror `prepare_fma.py` / `prepare_esc50.py`).
+`fsd50k` is wired in (`scripts/prepare_fsd50k.py`, in the `PREPARE` registry) — ~41k dev
+clips of 200 general sound-event classes, the diverse non-music data the plan wants (a clean
+AudioSet stand-in). The image includes `p7zip` for its multi-part split archives.
+
+```bash
+modal run modal_app.py::extract --dataset fsd50k --frontend encodec_24khz   # ~24 GB download on Modal
+```
+
+**Multi-domain training** (FMA music + FSD50K general) currently needs the two caches
+combined — the training scripts take a single `--cache` dir. Cleanest fix is to let
+`EmbeddingSequenceDataset` accept multiple cache dirs (small change); until then, point
+training at one or merge the `.npy` dirs (clip ids don't collide: FMA = 6-digit, FSD50K =
+Freesound ids). Once combined, `train --model jepa --dataset <combined>` as above, then
+re-run the forecasting eval on ESC-50 to check whether the transfer gap closes.
+
+## Adding another dataset
+
+1. Write `scripts/prepare_<name>.py` → `data/manifests/<name>.jsonl` (mirror the existing
+   prepares).
 2. Add it to the `PREPARE` registry in `modal_app.py`.
 3. `modal run modal_app.py::extract --dataset <name>` and train as above.
