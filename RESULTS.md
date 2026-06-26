@@ -247,8 +247,36 @@ JEPA latent-space skill (own space): ESC-50 +17/+34/+45/+41%, FMA +13/+23/+32/+3
    (decoder/data) are **two different issues** — and on the forecasting metric, in-domain,
    the JEPA is not deficient at all.
 
-Next extensions: multi-step rollout skill (Phase 3); broaden training data (FSD50K/AudioSet)
-and re-check forecasting transfer; decoded-audio listening tests.
+### Broadening to general audio closes the ESC-50 transfer gap (multi-domain)
+
+The diagnosis predicted the ESC-50 codec-forecasting gap was the *music-trained decoder*
+failing to generalize — not a model defect. Test: pretrain a multi-domain JEPA on FMA
+(music) **+ FSD50K** (~41k general sound-event clips) and re-run the forecasting eval. It
+closed the gap.
+
+| ESC-50 forecasting | FMA-only | **FMA + FSD50K** |
+|---|---|---|
+| JEPA codec cos gain, k=1 | −0.049 | **+0.086** |
+| ... k=2 | −0.050 | **+0.100** |
+| ... k=4 | −0.050 | **+0.107** |
+| ... k=8 | −0.043 | **+0.100** |
+| JEPA latent skill, k=1/2/4/8 | +17/34/45/41% | **+29/46/51/45%** |
+
+(Multi-domain JEPA: 25k steps, effective_rank 226/256, no collapse. Trained on Modal.)
+
+The multi-domain JEPA now **beats persistence at every horizon on unseen environmental
+sound** (+0.09–0.11 cosine) and essentially **matches APC** — the codec-frame specialist —
+on this transfer domain (APC +0.09/+0.10/+0.10 at k=1/3/5), while winning decisively in its
+native latent space (+29–51%, up from +17–45%). General-audio pretraining both fixed the
+decoder's transfer *and* improved latent forecasting.
+
+This confirms the whole chain: the transfer gap was decoder/data, not a model defect; and on
+the metric a world model is actually for, Phase 1 is now **strong** — beats persistence,
+matches the specialist baseline on transfer, wins in latent space. (The meanstd-ESC-50
+*probe* remains a separate, unchanged metric artifact — temporal smoothness, see above.)
+
+Next extensions: multi-step rollout skill (Phase 3); decoded-audio listening tests; and an
+in-domain forecasting check on the multi-domain model (FSD50K-eval / FMA val).
 
 ### Is the probe deficit domain mismatch? (No.) — in-domain control
 
