@@ -35,6 +35,7 @@ probe saw fewer training clips.)
 | A-JEPA (bidirectional, mel) | FMA, 15k steps | **55.6% ± 3.3%** |
 | A-JEPA (bidirectional, mel) | FMA, 40k steps | **57.5% ± 2.5%** |
 | **Causal JEPA (Phase 1)** | FMA, 25k steps | **44.8% ± 2.2%** ⚠ below baseline |
+| **Causal JEPA + grounding** | FMA, 15k steps | **48.4% ± 3.0%** ⚠ below baseline |
 
 ## Phase 1 — causal JEPA: a clean pretext, a failing probe (gate NOT passed)
 
@@ -71,6 +72,36 @@ gate is designed to catch — and it caught it.
 
 Per the plan, **do not proceed to Phase 2 (control) until a Phase 1 variant beats the
 APC bar (58.7%) and persistence.** Beating persistence alone (done) is not sufficient.
+
+### Iteration #1 — latent grounding (helps, not enough) + a pooling insight
+
+Adding the `z_t → codec-frame` reconstruction anchor lifted the probe **44.8% → 48.4%**
+(meanstd), and the head reconstructs the (standardized) codec frame near-perfectly
+(recon MSE ≈ 0.014) — so `z` *linearly contains* the codec embedding. Still below the
+54.7% baseline. Breaking the probe down by pooling is the revealing part:
+
+| Representation | mean-pool CV | mean+std-pool CV |
+|---|---|---|
+| EnCodec embeddings (baseline) | 41.2% | 54.4% |
+| Causal JEPA + grounding | **45.7%** | 48.4% |
+
+**The JEPA's per-frame representation (mean-pool) beats the codec baseline (45.7 vs 41.2).**
+Its deficit is entirely in the *temporal-std* component: raw codec gains +13 pts from
+std-pooling, the JEPA only +2.7. The causal-predictive objective makes `z` **temporally
+smooth** (that's what "predictable over time" means) — which is exactly the property a
+world model wants, but it erases the frame-to-frame variability that std-pooling exploits
+for environmental-sound classification.
+
+So "fails the gate" is more precisely: *the linear probe with std-pooling rewards
+temporal variability that our smooth latent deliberately suppresses.* This raises a real
+question about whether meanstd-probe accuracy on ESC-50 is the right yardstick for a world
+model, alongside the model-side levers (less aggressive smoothing via near-offset
+weighting / shorter horizons; stronger or different grounding; attentive pooling).
+
+**Open question for the project owner:** treat this as (a) a model problem — push for a
+less-smooth latent that wins on meanstd too; (b) a metric problem — the world-model
+objective and the std-pooling probe are partly at odds, so add predictive/forecasting and
+(later) control-based evals rather than leaning on the probe alone; or (c) both.
 
 Per-fold (CV) for reference:
 
