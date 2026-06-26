@@ -42,9 +42,10 @@ EXTRACT_GPU = "T4"
 TRAIN_GPU = "A10G"
 EVAL_GPU = "T4"
 
-# Ephemeral scratch disk (MiB). FSD50K unpack peaks ~50 GB; multi-domain train unpacks
-# several cache tars. 100 GiB leaves comfortable headroom.
-DISK_MIB = 100 * 1024
+# Ephemeral scratch disk (MiB). We only need ~50 GB (FSD50K unpack) / ~50 GB (multi-domain
+# train), but Modal's ephemeral_disk floor is 512 GiB (range 524288–3145728 MiB), so use
+# the minimum — plenty of headroom.
+DISK_MIB = 524288  # 512 GiB (Modal minimum)
 
 REPO = "/root/ta-jepa"
 SCRATCH = "/scratch"
