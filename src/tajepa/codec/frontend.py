@@ -98,6 +98,14 @@ class EncodecFrontend(CodecFrontend):
         emb = self.model.encoder(x)              # [B, D, T]
         return emb.transpose(1, 2).contiguous()  # [B, T, D]
 
+    @torch.no_grad()
+    def decode(self, embeddings: torch.Tensor) -> torch.Tensor:
+        """Render continuous (pre-quantizer) embeddings ``[B, T, D]`` back to audio
+        ``[B, 1, N]`` via the codec's own decoder — skipping the quantizer (the optional
+        render stage in the plan). Used by the closed-loop controllability eval."""
+        emb = embeddings.to(self.device).transpose(1, 2)   # [B, D, T]
+        return self.model.decoder(emb)
+
 
 @register_frontend("encodec_24khz")
 @register_frontend("encodec_48khz")

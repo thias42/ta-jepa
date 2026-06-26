@@ -142,10 +142,11 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   signals, and a `ControllableJEPA` whose predictor heads are FiLM-conditioned on the
   descriptor *delta* (control = transition modulation; FiLM zero-init so it starts as an
   unconditioned JEPA). `train_control.py` trains it on a `PairedSequenceDataset` (codec +
-  descriptors). Verified: perturbing a descriptor delta steers the decoded prediction
-  monotonically. Still TODO: closed-loop controllability eval (render audio, re-extract MIR,
-  check intended attribute moved + others held — the plan's disentanglement test) and 2b
-  (learned latent actions / VQ).
+  descriptors). The **closed-loop controllability eval** (`eval/controllability.py`,
+  `run_controllability.py`) renders predicted latents → audio (EnCodec `decode`) → re-extracts
+  MIR → reports the controllability matrix + disentanglement summary (the plan's test).
+  Verified end-to-end. Still TODO: a real (not smoke) control-training run, then 2b (learned
+  latent actions / VQ bottleneck) for what descriptors can't express.
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.

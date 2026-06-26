@@ -13,6 +13,7 @@ from .probe import (
     run_cv_probe,
 )
 from .forecasting import forecast_report, codec_forecast_curves, HorizonMetrics
+from .controllability import controllability_matrix, disentanglement_report
 
 __all__ = [
     "Representation",
@@ -28,4 +29,6 @@ __all__ = [
     "forecast_report",
     "codec_forecast_curves",
     "HorizonMetrics",
+    "controllability_matrix",
+    "disentanglement_report",
 ]
