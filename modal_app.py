@@ -128,6 +128,7 @@ def _download_tar(key: str, dest_parent: str) -> str:
 
 
 def _run(cmd: list[str], cwd: str = SCRATCH) -> None:
+    Path(cwd).mkdir(parents=True, exist_ok=True)  # Modal containers have no /scratch by default
     print("RUN:", " ".join(cmd))
     subprocess.run(cmd, cwd=cwd, check=True)
 
