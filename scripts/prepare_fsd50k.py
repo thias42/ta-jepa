@@ -114,6 +114,9 @@ def main() -> None:
     ap.add_argument("--download", action="store_true", help="Download archives if missing.")
     ap.add_argument("--include-eval", action="store_true",
                     help="Also include the eval set (~8 GB) as the test split.")
+    ap.add_argument("--cleanup-archives", action="store_true",
+                    help="Delete the downloaded archives after extraction (frees ~24 GB; "
+                         "use on ephemeral cloud disks — locally, omit to keep them cached).")
     args = ap.parse_args()
 
     dl = args.root / "downloads"
@@ -146,6 +149,12 @@ def main() -> None:
             recombine_extract(dl / "FSD50K.eval_audio.zip", eval_dir)
         eval_audio = find_audio_root(eval_dir, "FSD50K.eval_audio")
         build(next(gt_dir.rglob("eval.csv")), eval_audio, "test", entries)
+
+    # Free the archives (~24 GB) once the WAVs are extracted — peak-disk relief on
+    # ephemeral cloud containers. Skipped by default so local re-runs stay cached.
+    if args.cleanup_archives and dl.exists():
+        print(f"Cleaning up archives in {dl} ...")
+        shutil.rmtree(dl, ignore_errors=True)
 
     write_manifest(entries, args.out)
     splits: dict[str, int] = {}

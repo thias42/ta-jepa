@@ -42,6 +42,10 @@ EXTRACT_GPU = "T4"
 TRAIN_GPU = "A10G"
 EVAL_GPU = "T4"
 
+# Ephemeral scratch disk (MiB). FSD50K unpack peaks ~50 GB; multi-domain train unpacks
+# several cache tars. 100 GiB leaves comfortable headroom.
+DISK_MIB = 100 * 1024
+
 REPO = "/root/ta-jepa"
 SCRATCH = "/scratch"
 
@@ -69,7 +73,7 @@ r2_secret = modal.Secret.from_name("r2-credentials")
 PREPARE = {
     "fma_small": ["python", f"{REPO}/scripts/prepare_fma.py", "--download"],
     "esc50": ["python", f"{REPO}/scripts/prepare_esc50.py"],
-    "fsd50k": ["python", f"{REPO}/scripts/prepare_fsd50k.py", "--download"],
+    "fsd50k": ["python", f"{REPO}/scripts/prepare_fsd50k.py", "--download", "--cleanup-archives"],
 }
 # (frontend -> (extract script, extra args)); mel uses the config for hop/n_mels.
 EXTRACTORS = {
@@ -136,7 +140,8 @@ def _run(cmd: list[str], cwd: str = SCRATCH) -> None:
 # --------------------------------------------------------------------------- #
 # Functions
 # --------------------------------------------------------------------------- #
-@app.function(image=image, secrets=[r2_secret], gpu=EXTRACT_GPU, timeout=4 * 3600)
+@app.function(image=image, secrets=[r2_secret], gpu=EXTRACT_GPU,
+              ephemeral_disk=DISK_MIB, timeout=4 * 3600)
 def extract(dataset: str, frontend: str = "encodec_24khz") -> None:
     """Build a dataset from its public source and cache its features to R2.
 
@@ -158,7 +163,8 @@ def extract(dataset: str, frontend: str = "encodec_24khz") -> None:
     print(f"DONE extract: {dataset} [{frontend}] -> R2")
 
 
-@app.function(image=image, secrets=[r2_secret], gpu=TRAIN_GPU, timeout=8 * 3600)
+@app.function(image=image, secrets=[r2_secret], gpu=TRAIN_GPU,
+              ephemeral_disk=DISK_MIB, timeout=8 * 3600)
 def train(
     model: str, dataset: str, frontend: str = "encodec_24khz",
     save_name: str = "", extra_args: str = "",
