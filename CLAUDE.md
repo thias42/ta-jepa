@@ -142,6 +142,15 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.
 - `scripts/` — runnable CLIs; `configs/` — YAML for codec / APC / mel.
 
+## Cloud (Modal + R2)
+
+`modal_app.py` runs extraction/training/eval on Modal serverless GPUs with Cloudflare R2
+storage (caches + checkpoints as tarballs). We train on cached embeddings (~10–15 GB), not
+raw audio, so training is cheap and I/O-light; extraction runs on Modal from public sources
+(no audio upload). Each Modal function syncs R2→local and shells out to the existing scripts,
+so cloud == local code. Setup + commands: `docs/cloud-modal.md`. Cloud deps: `pip install -e
+".[cloud]"` (modal, boto3). Can't be run/tested without the user's Modal auth + R2 creds.
+
 ## Working conventions
 
 - Cache codec embeddings offline (`extract_embeddings.py`) so the model side iterates fast.

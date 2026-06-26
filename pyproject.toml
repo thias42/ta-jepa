@@ -30,6 +30,8 @@ dependencies = [
 dev = ["pytest>=8.0", "ruff>=0.4"]
 # Descript Audio Codec, as an alternative codec frontend to EnCodec.
 dac = ["descript-audio-codec>=1.0"]
+# Cloud runs on Modal with Cloudflare R2 storage (see modal_app.py, docs/cloud-modal.md).
+cloud = ["modal>=0.64", "boto3>=1.34"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
