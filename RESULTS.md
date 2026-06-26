@@ -1,11 +1,47 @@
-# Phase 0 results
+# Results — Phase 0 baselines & Phase 1 causal JEPA
 
-Baselines for the temporally-controlled audio JEPA. These exist to (a) validate the
-full pipeline end-to-end on real data and (b) set the bar that the Phase 1 causal
-JEPA must clear. See `docs/temporal-audio-jepa-plan.md` for the plan and `CLAUDE.md`
-for invariants.
+Results for the temporally-controlled audio JEPA. Phase 0 validates the pipeline and
+sets the baselines; Phase 1 is the core causal world model. See
+`docs/temporal-audio-jepa-plan.md` for the plan and `CLAUDE.md` for invariants. New to
+the project? Start with **In plain English** below, and see the **Glossary** at the end.
 
-_Last updated: 2026-06-25._
+_Last updated: 2026-06-26._
+
+## In plain English (for a non-specialist)
+
+**What we're building.** A system that learns about sound the way you might learn about
+the world by paying attention: by constantly trying to *predict what comes next*. Play it
+audio and it learns to guess the near future of that sound. The bet is that to predict
+sound well, it has to genuinely "understand" it — instruments, footsteps, a car
+approaching — without ever being told labels. (Eventually we also want to *steer* the
+prediction, like imagining "what if it got louder / higher" — but that's later.)
+
+**How we check if it learned something useful.** We freeze the model and give it a simple
+pop quiz: show it 2,000 short clips of everyday sounds (dogs, rain, helicopters, ...) and
+see whether a *very* simple classifier can read off the right category from the model's
+internal representation. Better understanding → easier to read off → higher score. We
+compare against two reference points: the raw audio codec with no learning at all, and a
+simpler "predict the next frame" model (APC).
+
+**What happened.** The core model learned to *predict the future* beautifully — far better
+than a dumb "assume nothing changes" baseline — and its internal representation stayed rich
+and healthy (it didn't cheat by collapsing to a constant). But on the pop quiz it scored
+*lower* than the no-learning baseline. Surprising.
+
+**Why — the interesting part.** We dug in and found the model's understanding is genuinely
+good *moment to moment* (frame by frame it matches the APC model). The catch: the quiz, the
+way it's scored, secretly rewards representations that **jump around a lot from instant to
+instant**. Our model, precisely because it learned to predict the future, represents sound
+in a **smooth, steady** way — and we *measured* this directly: its internal signal changes
+~2.4× more gently over time than the raw audio. That smoothness is a *feature* of a good
+predictor, not a bug. The quiz just happens to grade on jumpiness.
+
+**The takeaway.** This is like judging a student who deeply understands a story's plot
+(can tell you what happens next) with a quiz that only rewards noticing flashy
+scene-to-scene cuts. The student isn't worse — the quiz measures the wrong thing. So rather
+than dumbing the model down to win a flawed quiz, the right move is to **build a better
+test** — one that measures what a world model is actually for: predicting and (later)
+controlling sound over time. That's the current decision.
 
 ## Setup
 
@@ -80,28 +116,47 @@ Adding the `z_t → codec-frame` reconstruction anchor lifted the probe **44.8% 
 (recon MSE ≈ 0.014) — so `z` *linearly contains* the codec embedding. Still below the
 54.7% baseline. Breaking the probe down by pooling is the revealing part:
 
-| Representation | mean-pool CV | mean+std-pool CV |
+| Representation | mean-pool CV | mean+std-pool CV | std gain |
+|---|---|---|---|
+| EnCodec embeddings (baseline) | 41.2% | 54.4% | +13.2 |
+| APC (FMA) | 46.8% | 58.7% | +11.9 |
+| Causal JEPA + grounding | **45.7%** | 48.4% | **+2.7** |
+
+**The JEPA's per-frame representation (mean-pool) essentially matches APC (45.7 vs 46.8)
+and beats the codec baseline (41.2).** The entire APC→JEPA gap on meanstd is the
+*temporal-std* component: codec/APC gain +12–13 pts from std-pooling, the JEPA only +2.7.
+
+**Mechanism verified directly (not just inferred).** We measured the temporal smoothness of
+each representation on ESC-50 (200 clips):
+
+| Representation | lag-1 autocorrelation (1 = smooth) | norm. frame-to-frame step (low = smooth) |
 |---|---|---|
-| EnCodec embeddings (baseline) | 41.2% | 54.4% |
-| Causal JEPA + grounding | **45.7%** | 48.4% |
+| codec | 0.277 | 0.980 |
+| APC hidden | 0.270 | 0.990 |
+| JEPA + grounding | **0.669** | **0.774** |
 
-**The JEPA's per-frame representation (mean-pool) beats the codec baseline (45.7 vs 41.2).**
-Its deficit is entirely in the *temporal-std* component: raw codec gains +13 pts from
-std-pooling, the JEPA only +2.7. The causal-predictive objective makes `z` **temporally
-smooth** (that's what "predictable over time" means) — which is exactly the property a
-world model wants, but it erases the frame-to-frame variability that std-pooling exploits
-for environmental-sound classification.
+The JEPA latent is **~2.4× more temporally autocorrelated** than codec/APC, with smaller
+frame-to-frame steps — it is genuinely, measurably smoother. APC's hidden state is exactly
+as jumpy as the raw codec, which is why std-pooling works for it. So the chain is solid:
+causal-predictive objective → smooth latent → std-pooling extracts little → low meanstd
+score, despite per-frame quality matching APC.
 
-So "fails the gate" is more precisely: *the linear probe with std-pooling rewards
-temporal variability that our smooth latent deliberately suppresses.* This raises a real
-question about whether meanstd-probe accuracy on ESC-50 is the right yardstick for a world
-model, alongside the model-side levers (less aggressive smoothing via near-offset
-weighting / shorter horizons; stronger or different grounding; attentive pooling).
+### Decision: fix the evaluation, not the model
 
-**Open question for the project owner:** treat this as (a) a model problem — push for a
-less-smooth latent that wins on meanstd too; (b) a metric problem — the world-model
-objective and the std-pooling probe are partly at odds, so add predictive/forecasting and
-(later) control-based evals rather than leaning on the probe alone; or (c) both.
+The std-pooling probe rewards instant-to-instant variability — a property a *world model*
+should legitimately suppress, since temporal predictability is the whole point. Chasing a
+jumpier latent to win this probe would be optimizing the wrong objective. So the agreed
+direction is to **build evaluations that measure what a world model is actually for**, e.g.:
+
+- **Forecasting quality** — latent (and decoded) prediction error vs horizon, vs persistence
+  and APC, on held-out audio (the model already wins this; formalize and report it properly).
+- **Probes that don't bake in a jumpiness prior** — e.g. attentive/learned temporal pooling,
+  or evaluating per-frame then aggregating, rather than mean+std.
+- **(Later) control-based evals** — perturb a control signal, decode, re-measure, check the
+  intended attribute changed and others didn't (the plan's closed-loop controllability test).
+
+Until such evals exist, "below the codec baseline on meanstd-ESC-50" is noted but **not**
+treated as the verdict on Phase 1.
 
 Per-fold (CV) for reference:
 
@@ -158,4 +213,83 @@ $P scripts/run_probe.py --manifest data/manifests/esc50.jsonl \
 The plan gates Phase 1 on the causal backbone (a) beating persistence and (b) being
 X-ARES-competitive. The APC reference meets (a) and probes competitively at **58.7%**,
 which is the concrete bar the Phase 1 causal JEPA (frame encoder + EMA target + causal
-predictor + VICReg) must beat.
+predictor + VICReg) must beat. As of the temporal-smoothness finding above, criterion (b)
+— the meanstd-ESC-50 probe — is under review as a yardstick for a world model; see the
+"fix the evaluation" decision.
+
+## Glossary
+
+Terms and abbreviations used in this doc and the project.
+
+**Models & methods**
+- **JEPA** — Joint-Embedding Predictive Architecture. Learns by predicting the
+  *representation* (embedding) of unseen data from visible data, rather than the raw pixels/
+  samples. Our model is a *causal* JEPA over audio.
+- **World model** — a model that learns the dynamics of its input so it can predict (and
+  eventually be steered to imagine) future states.
+- **APC** — Autoregressive Predictive Coding. Baseline that predicts the *actual* future
+  feature frame from past context (an LSTM here). Cannot collapse (the target is grounded).
+- **A-JEPA** — audio JEPA baseline: *bidirectional* masked latent prediction over the
+  spectrogram (predict masked patches' latents). Not causal; no VICReg.
+- **I-JEPA / V-JEPA** — image / video JEPA (Meta). The lineage this project extends to
+  causal, controllable audio.
+- **Predictor** (`g_φ`) — small network that maps the encoder's latents to predicted future
+  latents.
+- **Frame encoder** (`f_θ`) — the network that turns the input sequence into latents `z`.
+- **Grounding / reconstruction anchor** — auxiliary term forcing the latent to be able to
+  reconstruct the input codec frame, so it stays acoustically informative.
+
+**Training & anti-collapse**
+- **EMA** — Exponential Moving Average. The *target encoder* `f_θ̄` is a slowly-updated copy
+  of the online encoder; it provides stable prediction targets.
+- **Stop-gradient** — targets are detached so gradients don't flow into the target branch.
+- **Collapse** — failure mode where the encoder outputs a (near-)constant, making prediction
+  trivially perfect but the representation useless.
+- **VICReg** — Variance-Invariance-Covariance Regularization. Anti-collapse term: a
+  *variance* hinge keeps each dimension's spread up; a *covariance* term decorrelates
+  dimensions. Mandatory here (the EMA target can collapse).
+- **Effective rank** — entropy-based count of "effectively used" representation dimensions;
+  a live collapse monitor (drops toward 1 under collapse). Ours stays ~240/256.
+- **Persistence baseline** — the naive predictor "the future equals the present"
+  (`x[t+k] := x[t]`); the floor a real predictor must beat.
+- **Offset / horizon (`k`, `n`)** — how many frames ahead we predict; we predict several
+  offsets jointly.
+- **Causal** — position `t` may only attend to positions `≤ t` (no peeking ahead),
+  enforced by a causal attention mask.
+- **Momentum (EMA)** — the EMA decay (e.g. 0.996→1.0 on a schedule); higher = slower target.
+
+**Evaluation**
+- **Linear probe** — freeze the model, train only a linear classifier on its features; tests
+  how *linearly readable* the learned representation is.
+- **Pooling (mean / mean+std)** — collapsing a `[T, D]` sequence to one vector per clip:
+  `mean` over time, optionally concatenated with the `std` over time. The std component
+  rewards temporal variability.
+- **Standardization (z-score)** — per-feature mean-0/std-1 rescaling before the linear probe.
+- **CV / fold** — k-fold cross-validation; ESC-50 ships 5 official folds. We report
+  mean ± std across folds.
+- **X-ARES** — an audio representation evaluation suite (the plan's probe reference).
+- **Chance level** — accuracy of random guessing (1/50 = 2% on ESC-50).
+- **Cross-domain transfer** — pretrain on one domain (music/FMA), evaluate on another
+  (environmental/ESC-50).
+- **Autocorrelation (lag-1)** — correlation of a signal with itself one step later; ~1 means
+  temporally smooth. Used to verify the smoothness of the JEPA latent.
+
+**Data & audio**
+- **Codec / EnCodec / DAC** — neural audio codecs. We use EnCodec's **continuous,
+  pre-quantizer** encoder embeddings (before the discrete vector quantizer).
+- **Embedding / latent (`z`)** — a learned vector representation of audio.
+- **Frame / frame rate** — codec/mel produce one feature vector per short time step; here
+  75 frames/second.
+- **Mel / log-mel spectrogram** — a perceptually-spaced time-frequency representation; the
+  A-JEPA baseline's input.
+- **Patch / mask ratio** — A-JEPA splits the spectrogram into 2D patches and masks a fraction
+  (the mask ratio) to predict.
+- **FMA / FMA-small** — Free Music Archive; 8000-track music set used for pretraining.
+- **ESC-50** — Environmental Sound Classification, 2000 clips / 50 classes; eval set.
+- **AudioSet / MTG-Jamendo / UrbanSound8K** — other audio datasets named in the plan (not
+  yet wired).
+
+**Infra**
+- **MPS** — Apple Metal Performance Shaders (the Mac GPU backend for PyTorch).
+- **Checkpoint (`.ckpt`)** — saved model weights.
+- **`dim` / `depth` / `heads`** — transformer width / number of layers / attention heads.
