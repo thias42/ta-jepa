@@ -363,6 +363,37 @@ predictor + VICReg) must beat. As of the temporal-smoothness finding above, crit
 — the meanstd-ESC-50 probe — is under review as a yardstick for a world model; see the
 "fix the evaluation" decision.
 
+## Phase 2a — supervised control: closed-loop controllability
+
+First real controllability result. Controllable JEPA trained on FMA + FSD50K (25k steps,
+effective rank 225/256, no collapse), evaluated closed-loop on ESC-50 (offset 1, bump +2σ,
+100 clips): perturb one descriptor's delta, render the prediction to audio via the EnCodec
+decoder, re-extract the descriptors. Matrix is column-normalized (each measured descriptor
+by its largest driver):
+
+| perturb \ measure | loudness | centroid | onset |
+|---|---|---|---|
+| **loudness** | **+1.00** | +0.38 | −1.00 |
+| **centroid** | +0.52 | **+1.00** | −0.49 |
+| **onset** | +0.003 | +0.002 | +0.000 |
+
+diagonal all positive · diagonal-dominant 0.67 · dominance ratio 1.67.
+
+- **Loudness and brightness (centroid) are controllable** — each most strongly drives its
+  own measured descriptor, with modest cross-talk. The dials are honest.
+- **The onset dial is dead** — the onset *row* is ~0: perturbing it changes nothing in the
+  rendered audio. The model's FiLM for onset stayed near its zero init, i.e. the predictor
+  found the onset delta unusable and ignored it. (Measured onset is instead driven,
+  negatively, by loudness — a rendering/acoustic side effect.)
+
+**Why, and what it implies.** Loudness and centroid vary smoothly, so their one-frame delta
+is predictable and informative — the predictor leans on it. Onset strength is a noisy
+temporal-derivative feature whose 1-frame delta is nearly unpredictable, so it carried no
+usable control signal. This lines up with the design thesis: supervised descriptors for the
+smooth *envelope* axes; **learned latent actions (2b) for transients / texture / percussion**
+— onset/transients look like a 2b job, not a 2a one. (Caveat: this is offset 1 only; an
+offset sweep is the cheap next check before declaring onset fundamentally uncontrollable.)
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.
