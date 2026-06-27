@@ -394,6 +394,39 @@ smooth *envelope* axes; **learned latent actions (2b) for transients / texture /
 — onset/transients look like a 2b job, not a 2a one. (Caveat: this is offset 1 only; an
 offset sweep is the cheap next check before declaring onset fundamentally uncontrollable.)
 
+## Phase 2b — learned latent actions: the codebook rediscovers loudness
+
+Action JEPA trained on FMA + FSD50K (25k steps, codebook perplexity 12.1/16, no collapse).
+Actions-controllability eval on ESC-50 (40 clips, force each code → render → re-extract MIR;
+effect vs the inferred-action baseline). Representative codes:
+
+| code | loudness | centroid | onset | usage | consistency |
+|---|---|---|---|---|---|
+| 11 | **+1.73** | +0.06 | −0.12 | 8.9% | 0.77 |
+| 1 | **−1.29** | −0.03 | +0.10 | 10.9% | 0.84 |
+| 5 | **−0.98** | −0.01 | +0.07 | 7.8% | 0.81 |
+| 3 | **+1.00** | +0.02 | −0.09 | 5.5% | 0.72 |
+| 13 | **−0.64** | +0.00 | +0.03 | 9.4% | 0.73 |
+
+mean consistency 0.65 · separability 0.92 · **16/16 codes used** · every code's top descriptor = loudness.
+
+**Finding.** The codes are consistent and all used, but they collapsed onto a *single semantic
+axis — loudness*: the 16 codes form a loudness spectrum (≈ −1.3 … +1.7), while centroid/onset
+effects are ~10× smaller and onset only trails loudness (an anti-correlated side effect, not
+independent control). So the learned action vocabulary **rediscovered the dominant,
+easily-predictable transition (energy)** — the very axis 2a's descriptors already control —
+rather than the transient/texture/onset control we hoped 2b would unlock. (Not "leakage": the
+control is real and reusable, just redundant and 1-dimensional.)
+
+**Why.** With a limited code budget, the inverse model spends it on the most prediction-relevant
+axis — frame-to-frame energy. The onset/texture structure is lower-energy and got crowded out.
+
+**Next — combine 2a + 2b (residual actions).** Feed the *supervised* descriptor deltas
+(loudness, centroid) as known control, and have the *learned* actions explain only the
+**residual** transition. That removes loudness from the actions' job and forces the codebook
+onto non-loudness structure (transients/texture) — the natural union of the plan's two control
+paths, and the most promising route to the onset control neither path has cracked alone.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.
