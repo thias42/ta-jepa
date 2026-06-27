@@ -133,8 +133,16 @@ modal run --detach modal_app.py::train --model actions --dataset fma_small,fsd50
 ```
 
 Watch `diag/perplexity` in the logs — it should sit well above 1 (codes in use) but not
-imply trivial prediction (leakage). Sweep `--num-codes`. A dedicated actions-controllability
-eval (drive with chosen codes, render, check codes map to consistent transitions) is TODO.
+imply trivial prediction (leakage). Sweep `--num-codes`. Then the actions-controllability eval
+(forces each code, renders, re-extracts MIR; reports per-code effect + consistency /
+separability / usage):
+
+```bash
+modal run modal_app.py::action_eval --dataset esc50 --ckpt actions_multi --extra-args "--n-clips 40"
+```
+
+Read `separability` (>1 = codes do distinct things) and `mean consistency` (→1 = each code
+means the same thing across contexts). The smoke model was 0.65 / 0.42 (under-trained).
 
 ## Adding another dataset
 

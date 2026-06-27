@@ -152,8 +152,10 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   bottlenecks it (anti-leakage), and an `ActionPredictor` (causal + FiLM on the action) predicts
   `z_{t+1}`. `train_actions.py` adds the VQ + code-usage-entropy losses; `codebook_perplexity`
   is the usage/leakage monitor. Drop the inverse model at inference; drive with chosen codes
-  (`predict_with_actions`). TODO: real cloud run + an actions-controllability eval (do codes map
-  to consistent, interpretable transitions; do they leak).
+  (`predict_with_actions`). The **actions-controllability eval** (`eval/action_controllability.py`,
+  `run_action_eval.py`) forces each code, renders, re-extracts MIR, and scores each code's
+  effect signature + consistency / separability / usage. Verified end-to-end. TODO: real cloud
+  run (sweep `--num-codes`) — the smoke model's codes aren't yet distinct (separability < 1).
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.

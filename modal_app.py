@@ -231,6 +231,17 @@ def control_eval(dataset: str, ckpt: str, extra_args: str = "") -> None:
 
 
 @app.function(image=image, secrets=[r2_secret], gpu=EVAL_GPU, timeout=2 * 3600)
+def action_eval(dataset: str, ckpt: str, extra_args: str = "") -> None:
+    """Actions-controllability eval: force each code, render, re-measure (Phase 2b)."""
+    feat = _download_tar(f"cache/encodec_24khz/{dataset}.tar", f"{SCRATCH}/cache/encodec_24khz")
+    local_ckpt = f"{SCRATCH}/runs/{ckpt}.ckpt"
+    _download(f"runs/{ckpt}.ckpt", local_ckpt)
+    cmd = ["python", f"{REPO}/scripts/run_action_eval.py",
+           "--ckpt", local_ckpt, "--features", feat, *shlex.split(extra_args)]
+    _run(cmd)
+
+
+@app.function(image=image, secrets=[r2_secret], gpu=EVAL_GPU, timeout=2 * 3600)
 def evaluate(
     eval_kind: str, dataset: str, frontend: str = "encodec_24khz",
     jepa_ckpt: str = "", apc_ckpt: str = "", extra_args: str = "",

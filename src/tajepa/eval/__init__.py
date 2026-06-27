@@ -14,6 +14,7 @@ from .probe import (
 )
 from .forecasting import forecast_report, codec_forecast_curves, HorizonMetrics
 from .controllability import controllability_matrix, disentanglement_report
+from .action_controllability import action_effect_matrix, action_report
 
 __all__ = [
     "Representation",
@@ -31,4 +32,6 @@ __all__ = [
     "HorizonMetrics",
     "controllability_matrix",
     "disentanglement_report",
+    "action_effect_matrix",
+    "action_report",
 ]
