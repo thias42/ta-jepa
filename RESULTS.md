@@ -503,6 +503,36 @@ as input *and* controlled), but it confirms the diagnosis: **transients must be 
 representation before they can be controlled.** A full (cloud) run is the next step to see how
 clean the onset dial gets with real training.
 
+## Transient-preserving frontend: tested, only a moderate lever
+
+Before committing to a multi-resolution-STFT transient frontend (inspired by the DAFx23
+descriptor-regularized-VAE line, which uses *attack time* as a transient descriptor), we
+tested whether transients are even missing from the codec. Onset recoverability on ESC-50:
+
+| onset recovery (held-out R²) | linear | nonlinear (MLP), temporal window |
+|---|---|---|
+| codec | 0.04 (0.10 windowed) | **0.31** |
+| multi-resolution STFT (n_fft 256/512/1024) | 0.11 | **0.44** |
+| sub-frame micro-envelope (8×) | 0.01 | — |
+
+**Findings:**
+- The earlier "codec doesn't encode onset (R²≈0.05)" was a *linear-probe* artifact: onset is
+  a nonlinear, between-frame flux quantity. A **nonlinear** probe recovers it from the codec
+  at **R²≈0.31** — so the transient information *is* in the codec, just nonlinearly.
+- A multi-res STFT frontend improves recoverability **moderately** (0.31→0.44), not
+  dramatically. The sub-frame broadband envelope doesn't help (onset needs spectral
+  resolution).
+
+**Implication.** A transient-preserving frontend is a *legitimate but incremental* lever, not
+the fix — the codec already carries transients nonlinearly, so the real bottleneck is the
+**smooth-latent predictive objective discarding them** (autocorr 0.67), which a frontend swap
+wouldn't address. The cheaper, higher-leverage path is the demonstrated one: **augment the
+input** with the transient descriptor (already revives the onset dial, §augmented-input) plus
+the DAFx23 lessons — a **smoother transient descriptor (attack/rise-time, not spectral-flux
+onset)** and a **transient-matching regularization** on the output. Multi-res STFT can be an
+optional richer transient channel on top, worth ~+0.13 R², but isn't worth a frontend rebuild
+on its own.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.
