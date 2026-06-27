@@ -19,7 +19,7 @@ import torch
 from ..config import DescriptorConfig
 
 # Order is fixed per name so the cached columns are stable. pitch/voicing are a pair.
-_DIMS = {"loudness": 1, "centroid": 1, "onset": 1, "pitch": 1, "voicing": 1}
+_DIMS = {"loudness": 1, "centroid": 1, "onset": 1, "attack": 1, "pitch": 1, "voicing": 1}
 
 
 class DescriptorFrontend:
@@ -39,11 +39,18 @@ class DescriptorFrontend:
         c = self.cfg
         cols: dict[str, np.ndarray] = {}
         need_pitch = "pitch" in self.names or "voicing" in self.names
-        if {"loudness", "centroid"} & set(self.names):
+        if {"loudness", "centroid", "attack"} & set(self.names):
             S = np.abs(librosa.stft(y, n_fft=c.n_fft, hop_length=c.hop_length)) ** 2
-        if "loudness" in self.names:
+        if {"loudness", "attack"} & set(self.names):
             rms = librosa.feature.rms(S=np.sqrt(S), frame_length=c.n_fft, hop_length=c.hop_length)[0]
-            cols["loudness"] = np.log(rms + 1e-6)
+            loud = np.log(rms + 1e-6)
+        if "loudness" in self.names:
+            cols["loudness"] = loud
+        if "attack" in self.names:
+            # smoothed positive rise-rate of log-energy: a stable transient/percussiveness
+            # axis (cf. DAFx23 "attack time"), unlike spiky spectral-flux onset
+            rise = np.maximum(np.diff(loud, prepend=loud[:1]), 0.0)
+            cols["attack"] = np.convolve(rise, np.ones(3) / 3, mode="same")
         if "centroid" in self.names:
             cen = librosa.feature.spectral_centroid(S=np.sqrt(S), sr=c.sample_rate)[0]
             cols["centroid"] = cen / (c.sample_rate / 2)            # normalized to Nyquist, in [0,1]

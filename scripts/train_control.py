@@ -42,7 +42,7 @@ def standardize(c: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
 class ControlLightning(pl.LightningModule):
     def __init__(self, in_dim=128, cond_dim=3, dim=256, enc_depth=6, pred_depth=3, heads=4,
                  offsets=(1, 2, 3, 4), dropout=0.0, lr=2e-4, weight_decay=0.05,
-                 var_coef=1.0, cov_coef=0.04, grounding_coef=1.0,
+                 var_coef=1.0, cov_coef=0.04, grounding_coef=1.0, desc_reg_coef=0.0,
                  base_momentum=0.996, max_steps=20000, augment_input=False):
         super().__init__()
         self.save_hyperparameters()
@@ -77,6 +77,22 @@ class ControlLightning(pl.LightningModule):
             recon_loss = grounding_loss(self.model.reconstruct(z), x, pad)
             loss = loss + self.hparams.grounding_coef * recon_loss
             self.log("train/recon_loss", float(recon_loss.detach()))
+        if self.hparams.desc_reg_coef > 0:
+            # ground the control: the predicted future latent must read (via desc_head) as
+            # the *commanded* future descriptor — this is what makes the dials disentangled.
+            reg = 0.0
+            for o in self.offsets:
+                if x.shape[1] <= o:
+                    continue
+                pred_desc = self.model.describe(preds[o][:, :-o])
+                tgt = ctrl[:, o:]
+                valid = (~pad[:, o:]).unsqueeze(-1) if pad is not None else None
+                d = (pred_desc - tgt) ** 2
+                reg = reg + ((d * valid).sum() / (valid.sum().clamp(min=1) * tgt.shape[-1])
+                             if valid is not None else d.mean())
+            reg = reg / len(self.offsets)
+            loss = loss + self.hparams.desc_reg_coef * reg
+            self.log("train/desc_reg", float(reg.detach() if torch.is_tensor(reg) else reg))
 
         for k in ("loss", "pred_loss", "var_loss", "cov_loss"):
             self.log(f"train/{k}", logs[k], prog_bar=(k == "loss"))
@@ -113,6 +129,9 @@ def main() -> None:
     ap.add_argument("--augment-input", action="store_true",
                     help="Concatenate descriptor channels onto the codec input (so the "
                          "encoder can represent transients).")
+    ap.add_argument("--desc-reg-coef", type=float, default=0.0,
+                    help="Weight on grounding the control: predicted future latent must read "
+                         "as the commanded descriptor (disentanglement lever).")
     ap.add_argument("--base-momentum", type=float, default=0.996)
     ap.add_argument("--window", type=int, default=256)
     ap.add_argument("--batch-size", type=int, default=32)
@@ -138,6 +157,7 @@ def main() -> None:
         pred_depth=args.pred_depth, heads=args.heads, offsets=tuple(args.offsets),
         dropout=args.dropout, lr=args.lr, weight_decay=args.weight_decay,
         var_coef=args.var_coef, cov_coef=args.cov_coef, grounding_coef=args.grounding_coef,
+        desc_reg_coef=args.desc_reg_coef,
         base_momentum=args.base_momentum, max_steps=args.max_steps,
         augment_input=args.augment_input,
     )

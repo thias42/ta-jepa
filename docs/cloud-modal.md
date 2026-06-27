@@ -122,6 +122,21 @@ The eval prints the controllability matrix `M[perturbed, measured]` and the dise
 summary — diagonal positive (each control raises its own descriptor) and dominance ratio
 (how cleanly separated the controls are). A well-trained model should be diagonally dominant.
 
+**Combined transient fix (recommended).** The descriptor cache now uses an `attack` axis
+(stable transient, vs spiky onset), and the control model can augment its input with the
+descriptors + ground the control in latent space:
+
+```bash
+modal run --detach modal_app.py::train_control --dataset fma_small,fsd50k \
+    --save-name control_combined --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 \
+    --grounding-coef 1.0 --augment-input --desc-reg-coef 1.0 --max-steps 25000"
+modal run modal_app.py::control_eval --dataset esc50 --ckpt control_combined \
+    --extra-args "--names loudness centroid attack --n-clips 100"
+```
+
+The payoff: does the **attack** dial become controllable (positive, diagonally-dominant)
+where onset never did?
+
 ## Phase 2b: learned latent actions (VQ)
 
 No descriptors needed — the action vocabulary is learned. Just codec caches.

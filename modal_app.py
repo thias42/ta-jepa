@@ -80,7 +80,10 @@ PREPARE = {
 EXTRACTORS = {
     "encodec_24khz": ([f"{REPO}/scripts/extract_embeddings.py"], ["--device", "cuda"]),
     "logmel": ([f"{REPO}/scripts/extract_mel.py"], ["--config", f"{REPO}/configs/mel_baseline.yaml"]),
-    "descriptors": ([f"{REPO}/scripts/extract_descriptors.py"], []),  # Phase 2a control signals
+    # Phase 2a/2b control signals. Default set uses 'attack' (a stable transient axis;
+    # smoother than spectral-flux onset — see RESULTS) so the transient dial is trainable.
+    "descriptors": ([f"{REPO}/scripts/extract_descriptors.py"],
+                    ["--names", "loudness", "centroid", "attack"]),
 }
 
 

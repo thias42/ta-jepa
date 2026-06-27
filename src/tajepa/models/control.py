@@ -71,6 +71,10 @@ class ControllableJEPA(nn.Module):
         self.encoder = CausalTransformer(enc_in, dim, enc_depth, heads, dropout)
         self.predictor = ControllablePredictor(dim, pred_depth, heads, self.offsets, cond_dim, dropout)
         self.recon_head = nn.Linear(dim, in_dim)   # grounding / latent->codec decoder
+        # descriptor head: read the descriptors back from a latent. Used to *ground the
+        # control* — the predicted future latent must read as the commanded descriptor,
+        # which is the disentanglement lever (cf. DAFx23 descriptor regularization).
+        self.desc_head = nn.Linear(dim, cond_dim)
 
     def build_enc_input(self, x, desc=None):
         if self.augment_input:
@@ -102,6 +106,10 @@ class ControllableJEPA(nn.Module):
 
     def reconstruct(self, z) -> torch.Tensor:
         return self.recon_head(z)
+
+    def describe(self, h) -> torch.Tensor:
+        """Read descriptors back from a latent / prediction (for control grounding)."""
+        return self.desc_head(h)
 
     def encode(self, x, desc=None, pad_mask=None) -> torch.Tensor:
         return self.encoder(self.build_enc_input(x, desc), pad_mask)
