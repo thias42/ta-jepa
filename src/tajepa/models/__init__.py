@@ -11,6 +11,7 @@ from .jepa import (
     causal_mask,
 )
 from .control import ControllableJEPA, ControllablePredictor, FiLM
+from .actions import ActionJEPA, VectorQuantizer, InverseModel, ActionPredictor
 
 __all__ = [
     "APCModel",
@@ -30,4 +31,8 @@ __all__ = [
     "ControllableJEPA",
     "ControllablePredictor",
     "FiLM",
+    "ActionJEPA",
+    "VectorQuantizer",
+    "InverseModel",
+    "ActionPredictor",
 ]

@@ -122,6 +122,20 @@ The eval prints the controllability matrix `M[perturbed, measured]` and the dise
 summary — diagonal positive (each control raises its own descriptor) and dominance ratio
 (how cleanly separated the controls are). A well-trained model should be diagonally dominant.
 
+## Phase 2b: learned latent actions (VQ)
+
+No descriptors needed — the action vocabulary is learned. Just codec caches.
+
+```bash
+modal run --detach modal_app.py::train --model actions --dataset fma_small,fsd50k \
+    --save-name actions_multi --extra-args "--dim 256 --enc-depth 6 --num-codes 16 \
+    --code-dim 32 --grounding-coef 1.0 --max-steps 25000"
+```
+
+Watch `diag/perplexity` in the logs — it should sit well above 1 (codes in use) but not
+imply trivial prediction (leakage). Sweep `--num-codes`. A dedicated actions-controllability
+eval (drive with chosen codes, render, check codes map to consistent transitions) is TODO.
+
 ## Adding another dataset
 
 1. Write `scripts/prepare_<name>.py` → `data/manifests/<name>.jsonl` (mirror the existing

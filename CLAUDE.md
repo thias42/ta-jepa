@@ -145,8 +145,15 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   descriptors). The **closed-loop controllability eval** (`eval/controllability.py`,
   `run_controllability.py`) renders predicted latents → audio (EnCodec `decode`) → re-extracts
   MIR → reports the controllability matrix + disentanglement summary (the plan's test).
-  Verified end-to-end. Still TODO: a real (not smoke) control-training run, then 2b (learned
-  latent actions / VQ bottleneck) for what descriptors can't express.
+  Verified end-to-end. First real result (RESULTS.md): loudness/brightness controllable, the
+  onset dial dead (noisy transient → points to 2b).
+- `src/tajepa/models/actions.py` — **Phase 2b learned latent actions** (LAPO/Genie): an
+  `InverseModel` infers an action from `(z_t, z_{t+1})`, a small-codebook `VectorQuantizer`
+  bottlenecks it (anti-leakage), and an `ActionPredictor` (causal + FiLM on the action) predicts
+  `z_{t+1}`. `train_actions.py` adds the VQ + code-usage-entropy losses; `codebook_perplexity`
+  is the usage/leakage monitor. Drop the inverse model at inference; drive with chosen codes
+  (`predict_with_actions`). TODO: real cloud run + an actions-controllability eval (do codes map
+  to consistent, interpretable transitions; do they leak).
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.

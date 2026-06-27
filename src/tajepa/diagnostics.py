@@ -50,6 +50,19 @@ def effective_rank(feats: torch.Tensor, pad_mask: torch.Tensor | None = None) ->
 
 
 @torch.no_grad()
+def codebook_perplexity(indices: torch.Tensor, num_codes: int) -> float:
+    """Perplexity of VQ code usage (1 = one code used, ``num_codes`` = uniform).
+
+    The anti-collapse / leakage monitor for learned latent actions (plan, Phase 2b):
+    too low = index collapse (a dead codebook); too high with trivial prediction = the
+    action may be leaking the whole transition."""
+    counts = torch.bincount(indices.reshape(-1), minlength=num_codes).float()
+    p = counts / counts.sum().clamp_min(1)
+    p = p[p > 0]
+    return float(torch.exp(-(p * p.log()).sum()))
+
+
+@torch.no_grad()
 def collapse_report(feats: torch.Tensor, pad_mask: torch.Tensor | None = None) -> dict[str, float]:
     return {
         "feature_std": feature_std(feats, pad_mask),

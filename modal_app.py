@@ -176,8 +176,8 @@ def train(
     ``dataset`` may be comma-separated (e.g. ``fma_small,fsd50k``) for multi-domain
     pretraining — each cache is pulled and passed as a separate ``--cache`` dir.
     """
-    if model not in ("jepa", "apc", "ajepa"):
-        raise ValueError(f"model must be jepa|apc|ajepa, got {model}")
+    if model not in ("jepa", "apc", "ajepa", "actions"):
+        raise ValueError(f"model must be jepa|apc|ajepa|actions, got {model}")
     datasets = [d.strip() for d in dataset.split(",") if d.strip()]
     save_name = save_name or f"{model}_{'_'.join(datasets)}"
     cache_dirs = [
