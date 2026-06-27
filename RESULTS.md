@@ -564,6 +564,29 @@ e.g. the harmonic/percussive energy *ratio* (HPSS) or spectral flatness/noisines
 measures "how percussive" independent of "how loud." That's the open lever; the energy-envelope
 descriptors are a dead end for *independent* transient control.
 
+> **Correction (later diagnostic).** The claim above — "attack entangled with loudness by
+> definition" — turned out to be **wrong**, and the suggested fixes backwards. Measuring
+> |correlation with loudness| on ESC-50: attack-rate **0.15**, loudness-normalized
+> attack-*time* **0.22** (both *low* — decorrelated), but spectral-flatness **0.84** and
+> HPSS percussive-ratio **0.68** (both *high* — in environmental audio, loud ≈ broadband/
+> percussive). So the attack *descriptor* is not the entanglement source, and HPSS/flatness
+> are worse, not better. The `control_combined` attack failure is therefore **not** a
+> descriptor-loudness problem — more likely the attack-rate signal is spiky/low-variance so
+> the predictor under-uses it, and/or the render path distorts the measured attack. The
+> better-decorrelated **attack-time** descriptor + the existing transient-matching loss is the
+> next thing to try.
+>
+> **Attack-time prototype (render-free latent check, 200-step smoke).** Added a loudness-
+> normalized `attack_time` descriptor + the descriptor-grounding loss. In latent space the
+> control now **grounds positively and dominantly (3/3 diagonal, all positive)** — commanding
+> attack_time up makes `desc_head(predicted latent)` read attack_time up (+1.0 on its own
+> axis), where the rise-rate `attack` had a *negative* diagonal. Residual loudness→attack_time
+> cross-talk remains (+0.9 in that column), and this is *latent* grounding only — the rendered-
+> audio verdict needs a real run through the decoder (where attack_time is sparse/low-variance,
+> std≈0.02, so expression is the open risk). But the latent result validates attack-time as the
+> better transient axis. Note also: attack-time grounded the *latent* even though it is not
+> recoverable from the codec — consistent with augment-input putting it there.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.

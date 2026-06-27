@@ -19,7 +19,8 @@ import torch
 from ..config import DescriptorConfig
 
 # Order is fixed per name so the cached columns are stable. pitch/voicing are a pair.
-_DIMS = {"loudness": 1, "centroid": 1, "onset": 1, "attack": 1, "pitch": 1, "voicing": 1}
+_DIMS = {"loudness": 1, "centroid": 1, "onset": 1, "attack": 1, "attack_time": 1,
+         "pitch": 1, "voicing": 1}
 
 
 class DescriptorFrontend:
@@ -39,18 +40,25 @@ class DescriptorFrontend:
         c = self.cfg
         cols: dict[str, np.ndarray] = {}
         need_pitch = "pitch" in self.names or "voicing" in self.names
-        if {"loudness", "centroid", "attack"} & set(self.names):
+        if {"loudness", "centroid", "attack", "attack_time"} & set(self.names):
             S = np.abs(librosa.stft(y, n_fft=c.n_fft, hop_length=c.hop_length)) ** 2
-        if {"loudness", "attack"} & set(self.names):
+        if {"loudness", "attack", "attack_time"} & set(self.names):
             rms = librosa.feature.rms(S=np.sqrt(S), frame_length=c.n_fft, hop_length=c.hop_length)[0]
             loud = np.log(rms + 1e-6)
+            rise = np.maximum(np.diff(loud, prepend=loud[:1]), 0.0)
         if "loudness" in self.names:
             cols["loudness"] = loud
         if "attack" in self.names:
-            # smoothed positive rise-rate of log-energy: a stable transient/percussiveness
-            # axis (cf. DAFx23 "attack time"), unlike spiky spectral-flux onset
-            rise = np.maximum(np.diff(loud, prepend=loud[:1]), 0.0)
+            # smoothed positive rise-RATE of log-energy (entangled with loudness magnitude)
             cols["attack"] = np.convolve(rise, np.ones(3) / 3, mode="same")
+        if "attack_time" in self.names:
+            # loudness-NORMALIZED rise sharpness (cf. DAFx23 attack time): normalize the rise
+            # by the local log-energy range so it measures "how sharp", decorrelated from "how
+            # loud" (|corr with loudness| ~0.22 vs ~0.84 for spectral flatness).
+            from scipy.ndimage import maximum_filter1d, minimum_filter1d
+            win = 15
+            rng = (maximum_filter1d(loud, win) - minimum_filter1d(loud, win)) + 1e-3
+            cols["attack_time"] = np.convolve(rise / rng, np.ones(3) / 3, mode="same")
         if "centroid" in self.names:
             cen = librosa.feature.spectral_centroid(S=np.sqrt(S), sr=c.sample_rate)[0]
             cols["centroid"] = cen / (c.sample_rate / 2)            # normalized to Nyquist, in [0,1]
