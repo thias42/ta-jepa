@@ -456,6 +456,34 @@ axis — 2a's onset dial was dead, 2b ignored onset entirely, and 2a+2b finally 
 but weakly. Closing that gap (stronger descriptor absorption / explicit two-stage residual /
 a transient-friendlier target than per-frame onset) is the open Phase 2 problem.
 
+## Root cause of the transient frontier: the codec doesn't encode onset
+
+Diagnostic (ESC-50, linear probe of each descriptor from the codec embedding, held-out R²):
+
+| descriptor | R² from codec frame | + temporal window [t-1,t,t+1] |
+|---|---|---|
+| loudness | **0.73** | 0.68 |
+| centroid | **0.42** | 0.44 |
+| onset | **0.05** | 0.09 |
+
+The EnCodec representation linearly encodes the **smooth envelope** axes (loudness well,
+brightness moderately) but **not transients/onset** (R² ≈ 0.05), and adding a delta / 3-frame
+window barely helps (→ 0.09). This is the single root cause of the whole Phase 2 transient
+story: **you can't steer (or learn an action for) what the input representation doesn't
+encode.** It maps exactly onto the controllability results — loudness controllable, brightness
+partial, onset dead (2a) / ignored (2b) / weak (residual).
+
+**Implications for fixes:**
+- *Codec delta / delta-delta:* won't help — tested above, onset stays ≈ 0.05–0.09.
+- *Tempogram:* captures rhythmic *periodicity* (derived from an onset envelope), not per-frame
+  transients; it's a windowed/global feature and most relevant to music rhythm, so it doesn't
+  make per-frame onset recoverable. Possibly a useful *extra* rhythm control for music, not the
+  fix here.
+- *What the data points to:* augment the **input** with explicit transient/flux information —
+  e.g. concatenate the onset/flux (and other) descriptor channels onto the codec embedding so
+  the encoder can represent transients — or a higher-time-resolution / transient-preserving
+  frontend. Onset must be *in* the representation before it can be controlled.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.
