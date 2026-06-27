@@ -533,6 +533,37 @@ onset)** and a **transient-matching regularization** on the output. Multi-res ST
 optional richer transient channel on top, worth ~+0.13 R², but isn't worth a frontend rebuild
 on its own.
 
+## Combined transient fix — result: attack is entangled with loudness (by definition)
+
+`control_combined` (FMA+FSD50K, attack descriptor + `--augment-input` + descriptor-grounding
+`--desc-reg-coef 1.0`, 25k steps), controllability eval on ESC-50 (col-normalized):
+
+| perturb \ measure | loudness | centroid | attack |
+|---|---|---|---|
+| **loudness** | +1.00 | +0.29 | −1.00 |
+| **centroid** | +0.52 | +1.00 | −0.53 |
+| **attack** | +0.10 | +0.05 | −0.11 |
+
+The auto-summary (diagonal-dominant 1.00, ratio 1.70) is **misleading**: loudness and centroid
+control cleanly, but the **attack dial failed** — its whole row is ~10× smaller than loudness's,
+its diagonal is *negative* (−0.11), and the measured-attack column is driven by the *loudness*
+command (−1.00), not the attack command. Measured attack is a side-effect of loudness, not an
+independent axis.
+
+**The fundamental issue.** Our transient descriptors are **not independent of loudness**: onset
+(spectral flux) and attack (rise-rate of the energy envelope) are both *energy-dynamics*
+quantities — attack is literally the time-derivative of loudness. "More attack at the same
+loudness" is nearly self-contradictory at the descriptor level, so no amount of grounding/
+augmentation disentangles them. The whole transient thread converges here: loudness/brightness
+are clean, controllable axes; **percussiveness is entangled with loudness and resisted every
+fix** (dead onset dial → 2b loudness collapse → residual weak onset → augment revived-but-
+entangled → attack negative/entangled).
+
+**What would actually be needed.** A **loudness-decorrelated** percussiveness descriptor —
+e.g. the harmonic/percussive energy *ratio* (HPSS) or spectral flatness/noisiness — which
+measures "how percussive" independent of "how loud." That's the open lever; the energy-envelope
+descriptors are a dead end for *independent* transient control.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.
