@@ -19,7 +19,7 @@ class _FakeModel:
     def deltas_from(self, ctrl):
         return {1: ctrl}
 
-    def predict_with_deltas(self, x, deltas):
+    def predict_with_deltas(self, x, deltas, desc=None, pad_mask=None):
         return None, {1: deltas[1]}
 
     def reconstruct(self, p):

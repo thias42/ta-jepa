@@ -484,6 +484,25 @@ partial, onset dead (2a) / ignored (2b) / weak (residual).
   the encoder can represent transients — or a higher-time-resolution / transient-preserving
   frontend. Onset must be *in* the representation before it can be controlled.
 
+### Augmented-input experiment (revives the onset dial)
+
+Concatenating the descriptor channels onto the codec input (`ControllableJEPA(augment_input=True)`,
+`train_control.py --augment-input`), smoke-trained on ESC-50:
+
+| | onset recoverable from `z` (R²) | onset *control* effect |
+|---|---|---|
+| raw codec frame | 0.05 | — |
+| codec-only control model | 0.11 | +0.00 (dead) |
+| **augmented-input control model** | **0.39** | **+0.26** |
+
+Augmenting the input puts onset *into* the latent (~8× the codec baseline) and **revives the
+dead onset dial** — perturbing the onset control now produces a real positive onset change
+(+0.26 vs +0.00), even at 120 smoke steps. Not yet cleanly disentangled (loudness cross-talk
+still dominates the onset column at this budget), and there's a mild circularity (onset is fed
+as input *and* controlled), but it confirms the diagnosis: **transients must be in the
+representation before they can be controlled.** A full (cloud) run is the next step to see how
+clean the onset dial gets with real training.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.

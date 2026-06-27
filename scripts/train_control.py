@@ -43,11 +43,11 @@ class ControlLightning(pl.LightningModule):
     def __init__(self, in_dim=128, cond_dim=3, dim=256, enc_depth=6, pred_depth=3, heads=4,
                  offsets=(1, 2, 3, 4), dropout=0.0, lr=2e-4, weight_decay=0.05,
                  var_coef=1.0, cov_coef=0.04, grounding_coef=1.0,
-                 base_momentum=0.996, max_steps=20000):
+                 base_momentum=0.996, max_steps=20000, augment_input=False):
         super().__init__()
         self.save_hyperparameters()
         self.model = ControllableJEPA(in_dim, dim, enc_depth, pred_depth, heads,
-                                      tuple(offsets), cond_dim, dropout)
+                                      tuple(offsets), cond_dim, dropout, augment_input)
         self.target = copy.deepcopy(self.model.encoder)
         for p in self.target.parameters():
             p.requires_grad_(False)
@@ -70,7 +70,7 @@ class ControlLightning(pl.LightningModule):
         z, preds = self.model(x, ctrl, pad)
         self.target.eval()
         with torch.no_grad():
-            z_tgt = self.target(x, pad)
+            z_tgt = self.target(self.model.build_enc_input(x, ctrl), pad)
         loss, logs = jepa_loss(preds, z, z_tgt, pad,
                                var_coef=self.hparams.var_coef, cov_coef=self.hparams.cov_coef)
         if self.hparams.grounding_coef > 0:
@@ -110,6 +110,9 @@ def main() -> None:
     ap.add_argument("--var-coef", type=float, default=1.0)
     ap.add_argument("--cov-coef", type=float, default=0.04)
     ap.add_argument("--grounding-coef", type=float, default=1.0)
+    ap.add_argument("--augment-input", action="store_true",
+                    help="Concatenate descriptor channels onto the codec input (so the "
+                         "encoder can represent transients).")
     ap.add_argument("--base-momentum", type=float, default=0.996)
     ap.add_argument("--window", type=int, default=256)
     ap.add_argument("--batch-size", type=int, default=32)
@@ -136,6 +139,7 @@ def main() -> None:
         dropout=args.dropout, lr=args.lr, weight_decay=args.weight_decay,
         var_coef=args.var_coef, cov_coef=args.cov_coef, grounding_coef=args.grounding_coef,
         base_momentum=args.base_momentum, max_steps=args.max_steps,
+        augment_input=args.augment_input,
     )
     trainer = pl.Trainer(max_steps=args.max_steps, accelerator=args.accelerator,
                          log_every_n_steps=10, enable_checkpointing=False,

@@ -43,7 +43,9 @@ def controllability_matrix(
     used = 0
 
     def render(deltas):
-        _, preds = model.predict_with_deltas(x, deltas)
+        # desc=ctrl supplies the (augmented) encoder input when the model uses it; steering
+        # comes from the perturbed deltas. Ignored by non-augmented models.
+        _, preds = model.predict_with_deltas(x, deltas, desc=ctrl)
         return desc_fn(render_fn(model.reconstruct(preds[offset]))).mean(dim=1)  # [B, C]
 
     n = min(n_clips, len(dataset))

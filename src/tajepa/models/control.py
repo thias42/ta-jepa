@@ -56,16 +56,28 @@ class ControllablePredictor(nn.Module):
 class ControllableJEPA(nn.Module):
     def __init__(
         self, in_dim=128, dim=256, enc_depth=6, pred_depth=3, heads=4,
-        offsets=(1, 2, 3, 4), cond_dim=3, dropout=0.0,
+        offsets=(1, 2, 3, 4), cond_dim=3, dropout=0.0, augment_input=False,
     ) -> None:
         super().__init__()
         self.dim = dim
         self.in_dim = in_dim
         self.cond_dim = cond_dim
         self.offsets = tuple(offsets)
-        self.encoder = CausalTransformer(in_dim, dim, enc_depth, heads, dropout)
+        # augment_input: concatenate the descriptor channels onto the codec embedding so the
+        # encoder can *represent* transients (the codec alone doesn't encode onset; see
+        # RESULTS). The grounding head still reconstructs the codec only (in_dim).
+        self.augment_input = augment_input
+        enc_in = in_dim + cond_dim if augment_input else in_dim
+        self.encoder = CausalTransformer(enc_in, dim, enc_depth, heads, dropout)
         self.predictor = ControllablePredictor(dim, pred_depth, heads, self.offsets, cond_dim, dropout)
         self.recon_head = nn.Linear(dim, in_dim)   # grounding / latent->codec decoder
+
+    def build_enc_input(self, x, desc=None):
+        if self.augment_input:
+            if desc is None:
+                desc = x.new_zeros(*x.shape[:-1], self.cond_dim)
+            return torch.cat([x, desc], dim=-1)
+        return x
 
     def deltas_from(self, desc: torch.Tensor) -> dict[int, torch.Tensor]:
         """``desc [B,T,C]`` -> ``{offset: desc[t+o] - desc[t]}`` (last frames padded with 0)."""
@@ -76,17 +88,20 @@ class ControllableJEPA(nn.Module):
         return out
 
     def forward(self, x, desc, pad_mask=None):
-        z = self.encoder(x, pad_mask)
+        z = self.encoder(self.build_enc_input(x, desc), pad_mask)
         preds = self.predictor(z, self.deltas_from(desc), pad_mask)
         return z, preds
 
-    def predict_with_deltas(self, x, deltas: dict[int, torch.Tensor], pad_mask=None):
-        """Inference: predict using *chosen* per-offset descriptor deltas (steering)."""
-        z = self.encoder(x, pad_mask)
+    def predict_with_deltas(self, x, deltas: dict[int, torch.Tensor], desc=None, pad_mask=None):
+        """Inference: predict using *chosen* per-offset descriptor deltas (steering).
+
+        ``desc`` provides the (augmented) encoder input when ``augment_input`` is set; the
+        steering still comes from ``deltas``."""
+        z = self.encoder(self.build_enc_input(x, desc), pad_mask)
         return z, self.predictor(z, deltas, pad_mask)
 
     def reconstruct(self, z) -> torch.Tensor:
         return self.recon_head(z)
 
-    def encode(self, x, pad_mask=None) -> torch.Tensor:
-        return self.encoder(x, pad_mask)
+    def encode(self, x, desc=None, pad_mask=None) -> torch.Tensor:
+        return self.encoder(self.build_enc_input(x, desc), pad_mask)
