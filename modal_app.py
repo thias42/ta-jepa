@@ -76,6 +76,9 @@ PREPARE = {
     "esc50": ["python", f"{REPO}/scripts/prepare_esc50.py"],
     "fsd50k": ["python", f"{REPO}/scripts/prepare_fsd50k.py", "--download", "--cleanup-archives"],
 }
+# Where each prepare script puts its extracted audio (relative to SCRATCH). Persisting these
+# to R2 lets descriptor/codec re-extractions skip the (slow) re-download from source.
+AUDIO_DIRS = {"fma_small": "data/fma_small", "esc50": "data/esc50", "fsd50k": "data/fsd50k"}
 # (frontend -> (extract script, extra args)); mel uses the config for hop/n_mels.
 EXTRACTORS = {
     "encodec_24khz": ([f"{REPO}/scripts/extract_embeddings.py"], ["--device", "cuda"]),
@@ -142,9 +145,52 @@ def _run(cmd: list[str], cwd: str = SCRATCH) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
+def _r2_exists(key: str) -> bool:
+    from botocore.exceptions import ClientError
+
+    try:
+        _r2().head_object(Bucket=_bucket(), Key=key)
+        return True
+    except ClientError:
+        return False
+
+
+def restore_or_prepare(dataset: str) -> str:
+    """Ensure the dataset's audio + manifest are on local disk; return the manifest path.
+
+    Restores persisted audio from R2 if present (fast, no egress); otherwise prepares from
+    the public source and persists it to R2 for next time. Manifest paths are absolute under
+    /scratch, which is stable across containers, so restored audio resolves correctly.
+    """
+    manifest = f"{SCRATCH}/data/manifests/{dataset}.jsonl"
+    audio_key = f"audio/{dataset}_audio.tar"
+    audio_dir = f"{SCRATCH}/{AUDIO_DIRS[dataset]}"
+    if _r2_exists(audio_key):
+        print(f"Restoring persisted audio from R2: {audio_key}")
+        _download_tar(audio_key, f"{SCRATCH}/data")
+        _download(f"manifests/{dataset}.jsonl", manifest)
+    else:
+        print(f"No persisted audio for {dataset}; preparing from source (will persist)")
+        _run(PREPARE[dataset])
+        _upload_dir_tar(audio_dir, audio_key)
+        _upload(manifest, f"manifests/{dataset}.jsonl")
+    return manifest
+
+
 # --------------------------------------------------------------------------- #
 # Functions
 # --------------------------------------------------------------------------- #
+@app.function(image=image, secrets=[r2_secret], ephemeral_disk=DISK_MIB, timeout=4 * 3600)
+def persist_audio(dataset: str) -> None:
+    """One-time: download a dataset's audio from source and persist it to R2 (no GPU), so
+    later extracts restore it instead of re-downloading. Idempotent (skips if already there)."""
+    if _r2_exists(f"audio/{dataset}_audio.tar"):
+        print(f"Already persisted: audio/{dataset}_audio.tar")
+        return
+    restore_or_prepare(dataset)
+    print(f"DONE persist_audio: {dataset} -> R2 audio/{dataset}_audio.tar")
+
+
 @app.function(image=image, secrets=[r2_secret], gpu=EXTRACT_GPU,
               ephemeral_disk=DISK_MIB, timeout=4 * 3600)
 def extract(dataset: str, frontend: str = "encodec_24khz") -> None:
@@ -157,8 +203,7 @@ def extract(dataset: str, frontend: str = "encodec_24khz") -> None:
     if frontend not in EXTRACTORS:
         raise ValueError(f"Unknown frontend '{frontend}'. Known: {sorted(EXTRACTORS)}")
 
-    _run(PREPARE[dataset])
-    manifest = f"{SCRATCH}/data/manifests/{dataset}.jsonl"
+    manifest = restore_or_prepare(dataset)   # R2 audio if persisted, else prepare + persist
     cache_dir = f"{SCRATCH}/data/cache/{frontend}/{dataset}"
     script, extra = EXTRACTORS[frontend]
     _run(["python", *script, "--manifest", manifest, "--cache", cache_dir, *extra])

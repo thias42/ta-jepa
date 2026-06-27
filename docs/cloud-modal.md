@@ -58,10 +58,24 @@ modal run modal_app.py::evaluate --eval-kind probe --dataset esc50 \
 ## R2 layout
 
 ```
-manifests/<dataset>.jsonl              # clip_id / label / fold / split (audio paths are stale, unused by eval)
+audio/<dataset>_audio.tar              # persisted extracted audio (so re-extracts skip the source download)
+manifests/<dataset>.jsonl              # clip_id / label / fold / split (absolute /scratch paths, stable across containers)
 cache/<frontend>/<dataset>.tar         # the [T,D] .npy embedding cache + meta.yaml
 runs/<name>.ckpt                       # Lightning checkpoints
 ```
+
+## Audio persistence (avoid re-downloading on every extract)
+
+`extract` restores audio from `audio/<dataset>_audio.tar` if present (fast, no egress);
+otherwise it prepares from the public source and **persists it to R2** for next time. So the
+*first* extract of a dataset downloads from source; subsequent extracts (a different frontend,
+or new descriptors) reuse the R2 copy. To pre-seed without extracting:
+
+```bash
+modal run modal_app.py::persist_audio --dataset fsd50k   # one-time; idempotent
+```
+
+This is why iterating on descriptors no longer re-downloads FSD50K's ~24 GB each time.
 
 ## Cost & knobs
 
