@@ -144,6 +144,22 @@ modal run modal_app.py::action_eval --dataset esc50 --ckpt actions_multi --extra
 Read `separability` (>1 = codes do distinct things) and `mean consistency` (→1 = each code
 means the same thing across contexts). The smoke model was 0.65 / 0.42 (under-trained).
 
+## Phase 2a+2b: residual learned actions
+
+Descriptors handle loudness/brightness for free; the learned codes are pushed onto the
+residual (transients/texture). Needs codec + descriptor caches.
+
+```bash
+modal run --detach modal_app.py::train_residual --dataset fma_small,fsd50k \
+    --save-name residual_multi --extra-args "--dim 256 --enc-depth 6 --num-codes 16 \
+    --code-dim 32 --grounding-coef 1.0 --max-steps 25000"
+modal run modal_app.py::residual_eval --dataset esc50 --ckpt residual_multi --extra-args "--n-clips 40"
+```
+
+The win to look for in the eval: codes whose **dominant descriptor is NOT loudness** (i.e.
+`dominant-descriptor spread` showing onset/centroid, not all loudness) — that means the
+codebook captured the residual structure pure 2b couldn't.
+
 ## Adding another dataset
 
 1. Write `scripts/prepare_<name>.py` → `data/manifests/<name>.jsonl` (mirror the existing

@@ -12,6 +12,7 @@ from .jepa import (
 )
 from .control import ControllableJEPA, ControllablePredictor, FiLM
 from .actions import ActionJEPA, VectorQuantizer, InverseModel, ActionPredictor
+from .residual import ResidualActionJEPA, ResidualPredictor, ResidualInverse
 
 __all__ = [
     "APCModel",
@@ -35,4 +36,7 @@ __all__ = [
     "VectorQuantizer",
     "InverseModel",
     "ActionPredictor",
+    "ResidualActionJEPA",
+    "ResidualPredictor",
+    "ResidualInverse",
 ]

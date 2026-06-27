@@ -156,6 +156,13 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   `run_action_eval.py`) forces each code, renders, re-extracts MIR, and scores each code's
   effect signature + consistency / separability / usage. Verified end-to-end. TODO: real cloud
   run (sweep `--num-codes`) — the smoke model's codes aren't yet distinct (separability < 1).
+- `src/tajepa/models/residual.py` — **Phase 2a+2b residual actions**: the real 2b run found the
+  codebook just rediscovered loudness (RESULTS.md), so here the predictor gets the descriptor
+  delta for free (FiLM) and the small-codebook action is pushed onto the *residual* transition.
+  `train_residual.py` (codec + descriptor caches), `run_residual_eval.py` /
+  `residual_action_effect_matrix` (vary the code with descriptors held fixed; the win = codes
+  whose top effect is NOT loudness). Modal: `train_residual` + `residual_eval`. The
+  loudness-vs-residual split needs the full run to materialize (FiLM is zero-init).
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.

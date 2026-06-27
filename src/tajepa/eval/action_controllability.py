@@ -59,6 +59,47 @@ def action_effect_matrix(
     return {"effect": effect, "within_std": within, "usage": usage / usage.sum().clamp_min(1)}
 
 
+@torch.no_grad()
+def residual_action_effect_matrix(
+    model: torch.nn.Module,
+    dataset,                  # PairedSequenceDataset (features + control)
+    render_fn,
+    desc_fn,
+    standardize_fn,           # raw control -> standardized (as in training)
+    n_clips: int = 40,
+    device: str | None = None,
+) -> dict:
+    """Same as ``action_effect_matrix`` but for the residual model — keeps the real
+    descriptor control fixed and varies only the learned action code, so the effects
+    isolate what the *codes* (not the descriptors) do."""
+    device = device or resolve_device("auto")
+    model = model.eval().to(device)
+    k = int(model.num_codes)
+    per_code: list[list[torch.Tensor]] = [[] for _ in range(k)]
+    usage = torch.zeros(k)
+
+    def desc_of(pred):
+        return desc_fn(render_fn(model.reconstruct(pred))).mean(dim=1)[0].cpu()
+
+    n = min(n_clips, len(dataset))
+    for idx in range(n):
+        item = dataset[idx]
+        x = item["features"].unsqueeze(0).to(device)
+        desc = standardize_fn(item["control"].unsqueeze(0).to(device))
+        out = model(x, desc)
+        usage += torch.bincount(out["indices"].reshape(-1).cpu(), minlength=k).float()
+        base = desc_of(out["pred"])
+        t = x.shape[1]
+        for code in range(k):
+            codes = torch.full((1, t), code, dtype=torch.long, device=device)
+            _, pred_c = model.predict_with(x, desc, codes)
+            per_code[code].append(desc_of(pred_c) - base)
+
+    effect = torch.stack([torch.stack(per_code[c]).mean(0) for c in range(k)])
+    within = torch.stack([torch.stack(per_code[c]).std(0).mean() for c in range(k)])
+    return {"effect": effect, "within_std": within, "usage": usage / usage.sum().clamp_min(1)}
+
+
 def action_report(res: dict, names: list[str] | None = None) -> dict:
     """Summarize an action-effect result into consistency / distinctiveness scores."""
     M, within = res["effect"], res["within_std"]
