@@ -427,6 +427,35 @@ axis — frame-to-frame energy. The onset/texture structure is lower-energy and 
 onto non-loudness structure (transients/texture) — the natural union of the plan's two control
 paths, and the most promising route to the onset control neither path has cracked alone.
 
+## Phase 2a+2b — residual actions: the codebook starts to capture transients
+
+Pure 2b's codebook collapsed to loudness. The residual model gives the predictor the
+descriptor delta for free (FiLM) and keeps the learned action on a small codebook, to push
+the codes onto the residual. Trained on FMA + FSD50K (25k steps); residual actions eval on
+ESC-50 (40 clips, descriptors held fixed, only the code varied):
+
+| | pure 2b actions | **2a+2b residual** |
+|---|---|---|
+| codes with dominant effect = loudness | 16 / 16 | **12 / 16** |
+| codes with dominant effect = **onset** | 0 / 16 | **4 / 16** |
+| mean consistency | 0.65 | 0.60 |
+| separability | 0.92 | 0.87 |
+
+**The needle moved.** Freeing loudness to the descriptor path let **4 codes become
+onset-dominant** (vs none in pure 2b) — directional confirmation that the residual split
+pushes the codebook onto the transient structure descriptors can't express.
+
+**But transient control is still the hard frontier.** The onset codes are weak (effects
+~0.08, and all slightly *negative*) and *inconsistent* (consistency ~0.3 vs ~0.7 for the
+loudness codes); 12 codes still track loudness, so descriptors didn't fully absorb it. So
+this is progress, not a clean transient dial.
+
+**The through-line of Phase 2.** Across all three control paths, the *smooth envelope* axes
+(loudness, brightness) are easy and reliable; *transients/onset* are the consistent hard
+axis — 2a's onset dial was dead, 2b ignored onset entirely, and 2a+2b finally captures it
+but weakly. Closing that gap (stronger descriptor absorption / explicit two-stage residual /
+a transient-friendlier target than per-frame onset) is the open Phase 2 problem.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.
