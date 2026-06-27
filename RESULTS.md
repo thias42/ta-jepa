@@ -586,6 +586,27 @@ descriptors are a dead end for *independent* transient control.
 > std≈0.02, so expression is the open risk). But the latent result validates attack-time as the
 > better transient axis. Note also: attack-time grounded the *latent* even though it is not
 > recoverable from the codec — consistent with augment-input putting it there.
+>
+> **Rendered verdict (full cloud run, `control_atime`, FMA+FSD50K 25k).** The latent grounding
+> did **not** survive the render. ESC-50 controllability (col-normalized):
+>
+> | perturb \ measure | loudness | centroid | attack_time |
+> |---|---|---|---|
+> | loudness | +1.00 | +0.29 | **+1.00** |
+> | centroid | +0.55 | +1.00 | -0.02 |
+> | attack_time | +0.07 | +0.00 | **+0.01** |
+>
+> The attack_time dial is **near-dead in rendered audio** (diagonal +0.01, whole row ~0.01-0.07),
+> and measured attack_time is driven by the *loudness* command (+1.0). So the transient bottleneck
+> is now precisely located: it is **the render path**, not the descriptor (decorrelated), not the
+> latent (grounds 3/3). Decoding latent->codec->audio via the **linear grounding head** can't
+> produce the (nonlinearly-encoded) codec patterns transients need, so the commanded transient
+> never reaches the audio. Loudness/brightness control end-to-end; transients control in *latent*
+> but not in *rendered audio*.
+>
+> **Remaining lever:** a nonlinear / transient-aware latent->codec decoder (replace the linear
+> `recon_head` with a small MLP/transformer), so the grounded latent transient can be rendered.
+> The descriptor and representation questions are now closed; the render path is the open one.
 
 ## Glossary
 
