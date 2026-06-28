@@ -34,6 +34,10 @@ violating one, flag it explicitly.
    centroid/brightness, onset/transient density, pitch/chroma gated by voicing), injected as
    *deltas* via FiLM/cross-attention. (b) Learned latent actions: an inverse model with a
    small VQ bottleneck (LAPO/Genie-style), placed mid-stack.
+   *(Empirical refinement — see the control modules below / RESULTS.md: spectral descriptors
+   are controllable (loudness/brightness/harmonic_ratio work, pitch weak); the plan's
+   onset/transient axis is render-limited and does NOT control. Choose axes by
+   loudness-decorrelation + codec-recoverability.)*
 5. **Source-filter / DDSP control is quarantined** to a later speech-or-monophonic variant.
    Keep it out of the general model.
 6. **Decoder is decoupled and optional** — codec's own frozen decoder, for generative use
@@ -138,31 +142,36 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
 - `src/tajepa/extract.py` — generic feature-cache core; `codec/extract.py` (codec) and
   `extract_mel.py` (log-mel) both delegate to it.
 - `src/tajepa/features/descriptors.py` + `src/tajepa/models/control.py` — **Phase 2a control**:
-  frame-aligned MIR descriptors (loudness/centroid/onset; pitch/voicing optional) as control
-  signals, and a `ControllableJEPA` whose predictor heads are FiLM-conditioned on the
-  descriptor *delta* (control = transition modulation; FiLM zero-init so it starts as an
-  unconditioned JEPA). `train_control.py` trains it on a `PairedSequenceDataset` (codec +
-  descriptors). The **closed-loop controllability eval** (`eval/controllability.py`,
-  `run_controllability.py`) renders predicted latents → audio (EnCodec `decode`) → re-extracts
-  MIR → reports the controllability matrix + disentanglement summary (the plan's test).
-  Verified end-to-end. First real result (RESULTS.md): loudness/brightness controllable, the
-  onset dial dead (noisy transient → points to 2b).
-- `src/tajepa/models/actions.py` — **Phase 2b learned latent actions** (LAPO/Genie): an
-  `InverseModel` infers an action from `(z_t, z_{t+1})`, a small-codebook `VectorQuantizer`
-  bottlenecks it (anti-leakage), and an `ActionPredictor` (causal + FiLM on the action) predicts
-  `z_{t+1}`. `train_actions.py` adds the VQ + code-usage-entropy losses; `codebook_perplexity`
-  is the usage/leakage monitor. Drop the inverse model at inference; drive with chosen codes
-  (`predict_with_actions`). The **actions-controllability eval** (`eval/action_controllability.py`,
-  `run_action_eval.py`) forces each code, renders, re-extracts MIR, and scores each code's
-  effect signature + consistency / separability / usage. Verified end-to-end. TODO: real cloud
-  run (sweep `--num-codes`) — the smoke model's codes aren't yet distinct (separability < 1).
-- `src/tajepa/models/residual.py` — **Phase 2a+2b residual actions**: the real 2b run found the
-  codebook just rediscovered loudness (RESULTS.md), so here the predictor gets the descriptor
-  delta for free (FiLM) and the small-codebook action is pushed onto the *residual* transition.
-  `train_residual.py` (codec + descriptor caches), `run_residual_eval.py` /
-  `residual_action_effect_matrix` (vary the code with descriptors held fixed; the win = codes
-  whose top effect is NOT loudness). Modal: `train_residual` + `residual_eval`. The
-  loudness-vs-residual split needs the full run to materialize (FiLM is zero-init).
+  frame-aligned MIR descriptors as control signals (frontend supports loudness, centroid,
+  onset, attack, attack_time, harmonic_ratio, pitch, voicing; the **working default set is
+  loudness/centroid/harmonic_ratio/pitch**) + a `ControllableJEPA` whose predictor heads are
+  FiLM-conditioned on the descriptor *delta* (control = transition modulation; FiLM zero-init →
+  starts unconditioned). Options: `--augment-input` (concat descriptors onto the codec input so
+  the encoder can represent them) and `--desc-reg-coef` (ground the control — the predicted
+  latent must read as the commanded descriptor). `train_control.py` on a `PairedSequenceDataset`.
+  The **closed-loop controllability eval** (`run_controllability.py`) renders predicted latents →
+  audio (EnCodec `decode`) → re-extracts MIR → controllability matrix.
+  **Result (RESULTS.md): three working dials — loudness, brightness (centroid), harmonic_ratio
+  (tonal-vs-noisy); pitch weak; transient axes (onset/attack/attack_time) do NOT render.** Key
+  lesson: pick a control axis by *loudness-decorrelation + **codec-recoverability***, which
+  predict controllability monotonically (harmonic_ratio R²≈0.34 works, pitch 0.19 weak, onset
+  0.07 dead). Transients are the **render-limited frontier** — not a representation problem (the
+  codec encodes them nonlinearly; augment puts onset in the latent and it *grounds*), but the
+  linear `recon_head` can't draw the transient back into audio. Open lever: a nonlinear
+  latent→codec decoder.
+- `src/tajepa/models/actions.py` — **Phase 2b learned latent actions** (LAPO/Genie): inverse
+  model → small-codebook `VectorQuantizer` → causal `ActionPredictor` (FiLM on the action)
+  predicts `z_{t+1}`; drop the inverse model at inference, drive with chosen codes
+  (`predict_with_actions`). `codebook_perplexity` monitors usage/leakage; the eval
+  (`run_action_eval.py`) scores per-code effect / consistency / separability.
+  **Result: the codebook collapsed to a loudness axis** (all 16 codes ≈ loudness levels) — the
+  learned actions rediscover the dominant predictable axis, not the transient/texture control
+  hoped for. (Don't select on pretext loss — watch perplexity + the eval.)
+- `src/tajepa/models/residual.py` — **Phase 2a+2b residual actions**: predictor gets the
+  descriptor delta for free (FiLM) so the small VQ codebook is pushed onto the *residual*
+  transition (`train_residual.py`, `run_residual_eval.py`, Modal `train_residual`/`residual_eval`).
+  **Result: partial — 4/16 codes became onset-dominant (vs 0/16 in pure 2b) but weak and
+  inconsistent**; transients stayed render-limited (same wall as 2a).
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.
