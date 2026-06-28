@@ -85,8 +85,10 @@ EXTRACTORS = {
     "logmel": ([f"{REPO}/scripts/extract_mel.py"], ["--config", f"{REPO}/configs/mel_baseline.yaml"]),
     # Phase 2a/2b control signals. Default set uses 'attack' (a stable transient axis;
     # smoother than spectral-flux onset — see RESULTS) so the transient dial is trainable.
+    # Spectral/timbral axes that are codec-recoverable (render-friendly), unlike transients:
+    # harmonic_ratio (tonal vs noisy) + pitch (most loudness-decorrelated). See RESULTS.
     "descriptors": ([f"{REPO}/scripts/extract_descriptors.py"],
-                    ["--names", "loudness", "centroid", "attack_time"]),
+                    ["--names", "loudness", "centroid", "harmonic_ratio", "pitch"]),
 }
 
 
@@ -192,7 +194,7 @@ def persist_audio(dataset: str) -> None:
 
 
 @app.function(image=image, secrets=[r2_secret], gpu=EXTRACT_GPU,
-              ephemeral_disk=DISK_MIB, timeout=4 * 3600)
+              ephemeral_disk=DISK_MIB, timeout=8 * 3600)  # HPSS/yin descriptors are slow at scale
 def extract(dataset: str, frontend: str = "encodec_24khz") -> None:
     """Build a dataset from its public source and cache its features to R2.
 

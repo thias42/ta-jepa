@@ -20,7 +20,7 @@ from ..config import DescriptorConfig
 
 # Order is fixed per name so the cached columns are stable. pitch/voicing are a pair.
 _DIMS = {"loudness": 1, "centroid": 1, "onset": 1, "attack": 1, "attack_time": 1,
-         "pitch": 1, "voicing": 1}
+         "harmonic_ratio": 1, "pitch": 1, "voicing": 1}
 
 
 class DescriptorFrontend:
@@ -39,8 +39,7 @@ class DescriptorFrontend:
 
         c = self.cfg
         cols: dict[str, np.ndarray] = {}
-        need_pitch = "pitch" in self.names or "voicing" in self.names
-        if {"loudness", "centroid", "attack", "attack_time"} & set(self.names):
+        if {"loudness", "centroid", "attack", "attack_time", "harmonic_ratio", "pitch"} & set(self.names):
             S = np.abs(librosa.stft(y, n_fft=c.n_fft, hop_length=c.hop_length)) ** 2
         if {"loudness", "attack", "attack_time"} & set(self.names):
             rms = librosa.feature.rms(S=np.sqrt(S), frame_length=c.n_fft, hop_length=c.hop_length)[0]
@@ -64,15 +63,28 @@ class DescriptorFrontend:
             cols["centroid"] = cen / (c.sample_rate / 2)            # normalized to Nyquist, in [0,1]
         if "onset" in self.names:
             cols["onset"] = librosa.onset.onset_strength(y=y, sr=c.sample_rate, hop_length=c.hop_length)
-        if need_pitch:
-            f0, voiced, _ = librosa.pyin(
+        # harmonic ratio (HPSS): spectral/timbral "tonal vs noisy" axis — codec-recoverable
+        # and render-friendly, unlike transients. Also gates pitch (meaningful when tonal).
+        hr = None
+        if {"harmonic_ratio", "pitch"} & set(self.names):
+            mag = np.sqrt(S)
+            Hc, Pc = librosa.decompose.hpss(mag)
+            hr = Hc.sum(0) / (Hc.sum(0) + Pc.sum(0) + 1e-9)
+        if "harmonic_ratio" in self.names:
+            cols["harmonic_ratio"] = hr
+        if "pitch" in self.names:
+            # fast f0 via yin (pyin is too slow at scale); octaves above fmin, gated to 0
+            # where the frame isn't tonal (harmonic ratio low) so pitch is meaningful.
+            f0 = librosa.yin(y, fmin=c.fmin_hz, fmax=c.fmax_hz, sr=c.sample_rate,
+                             hop_length=c.hop_length)
+            p = np.log2(np.clip(f0, c.fmin_hz, c.fmax_hz) / c.fmin_hz)
+            L = min(len(p), len(hr))
+            cols["pitch"] = np.where(hr[:L] > 0.5, p[:L], 0.0)
+        if "voicing" in self.names:
+            _, voiced, _ = librosa.pyin(
                 y, fmin=c.fmin_hz, fmax=c.fmax_hz, sr=c.sample_rate, hop_length=c.hop_length
             )
-            if "pitch" in self.names:
-                lp = np.log2(np.where(np.isfinite(f0) & (f0 > 0), f0, c.fmin_hz))
-                cols["pitch"] = lp - np.log2(c.fmin_hz)              # octaves above fmin
-            if "voicing" in self.names:
-                cols["voicing"] = np.nan_to_num(voiced.astype(np.float32))
+            cols["voicing"] = np.nan_to_num(voiced.astype(np.float32))
 
         t = min(len(cols[n]) for n in self.names)
         return np.stack([cols[n][:t] for n in self.names], axis=-1).astype(np.float32)  # [T, D]
