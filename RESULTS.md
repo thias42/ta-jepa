@@ -608,6 +608,34 @@ descriptors are a dead end for *independent* transient control.
 > `recon_head` with a small MLP/transformer), so the grounded latent transient can be rendered.
 > The descriptor and representation questions are now closed; the render path is the open one.
 
+## Spectral control axes work where transients didn't (harmonic_ratio + pitch)
+
+Following the control-axis selection criterion (decorrelation + **codec-recoverability**), we
+swapped the render-doomed transient for two *spectral* axes. `control_hp` (FMA+FSD50K, 25k,
+augment-input + descriptor-grounding), ESC-50 controllability (col-normalized):
+
+| perturb \ measure | loudness | centroid | harmonic_ratio | pitch |
+|---|---|---|---|---|
+| loudness | +1.00 | +0.21 | +0.60 | −1.00 |
+| centroid | +0.44 | +1.00 | −0.51 | +0.38 |
+| **harmonic_ratio** | −0.30 | −0.34 | **+1.00** | −0.08 |
+| pitch | +0.03 | +0.05 | −0.02 | **+0.21** |
+
+- **harmonic_ratio is controllable in rendered audio** — measured harmonicity is driven *most*
+  by its own command (+1.0 in-column), positive diagonal, moderate loudness cross-talk (+0.6).
+  The first new control dial beyond loudness/brightness to survive the render.
+- **pitch is weak** — its dial is positive (+0.21) but measured pitch is dominated by the
+  loudness command; consistent with its modest recoverability (0.19) and fast-yin imprecision.
+
+**This validates the selection criterion**: codec-recoverability predicts controllability,
+monotonically — harmonic_ratio (R²0.34) works, pitch (0.19) weak, onset (0.07) dead. The right
+way to choose a control descriptor is decorrelation + recoverability, *checked up front*.
+
+**Net control story:** a controllable audio world model with **three working dials — loudness,
+brightness, harmonicity** — plus a weak pitch dial, and transients as the documented
+render-limited frontier (needs a nonlinear latent→codec decoder). Spectral/timbral axes are
+controllable; temporal (transient) ones are gated by the linear render head.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.
