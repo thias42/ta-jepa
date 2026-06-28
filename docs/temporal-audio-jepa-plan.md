@@ -4,6 +4,39 @@ A causal, action-conditioned latent world model for general audio (music, enviro
 
 ---
 
+## Findings vs plan (as of 2026-06-28)
+
+This document is the original design rationale; the body below is preserved as written. Execution
+(Phases 0–2) revised several points — see `RESULTS.md` for the data behind each:
+
+- **The Phase 1 gate ("competitive on X-ARES", below) is the wrong yardstick.** The causal
+  objective makes the latent temporally *smooth* (autocorr 0.67 vs 0.27 for codec/APC), which the
+  std-pooling linear probe penalizes — the JEPA probes *below* the codec baseline (44.8% vs 54.7%)
+  yet forecasts well. The validated gate is **forecasting-error-vs-horizon vs persistence**, on
+  which multi-domain Phase 1 beats persistence at every horizon and matches APC on transfer.
+- **Control axis selection (#4 / Phase 2a).** What predicts controllability is
+  **loudness-decorrelation + codec-recoverability**, not the descriptor's name. The plan's
+  **onset/transient** axis is *render-limited* and does NOT control (codec-recoverability R²≈0.07);
+  **harmonic_ratio** (tonal-vs-noisy; not in the plan's list, but matching its "envelope-vs-fine-
+  structure" instinct) *does* (R²≈0.34). Working dials: **loudness, brightness, harmonic_ratio**;
+  pitch weak; transients open. 
+- **The decoder is not peripheral (#1/#6/Phase 4, and the "no-decoder" novelty framing).** A
+  grounding head (latent→codec decoder) was added to the core, and the *linear* render path is the
+  bottleneck that blocks transient control — the render stage is central to controllability, not
+  optional.
+- **Learned actions (#4b / Phase 2b).** Implemented as predictor **FiLM-conditioning, not the
+  "mid-stack" VQ insertion**; and contrary to the "pretext loss worsens" expectation, the action
+  makes prediction *easier* (leak risk) and the codebook **collapsed to a loudness axis**. The
+  residual 2a+2b variant only weakly captured transients.
+- **Data/stack divergences:** used **FSD50K** as the general set (not AudioSet, impractical to
+  download); **librosa** only (not madmom/CREPE); pitch via `librosa.yin`.
+
+Still on-track as designed: continuous codec embeddings (#1), causal latent prediction (#2),
+VICReg anti-collapse (#3, holds — effective rank ~240/256), multi-domain data, and the closed-loop
+controllability methodology. Phases 3–4 and the multimodal extension are unreached future work.
+
+---
+
 ## Design commitments
 
 These are settled decisions, with the reasoning that led to each:
