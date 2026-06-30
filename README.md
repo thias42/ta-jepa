@@ -116,6 +116,36 @@ $P scripts/extract_embeddings.py \
     --cache data/cache/encodec_24khz/fma_small --device cpu
 ```
 
+## Demos
+
+Two Gradio web demos (`pip install -e ".[demo]"`). Each opens a local URL; add `--share`
+for a public link, and an optional `--examples <dir>` of audio clips for one-click loading.
+
+**Anticipation** — the flagship, and the decoder-free, V-JEPA-style showcase. From past
+context only, the causal model predicts the near future *in latent space*; the demo plots
+its per-frame prediction error against a persistence baseline under a spectrogram, marks the
+**surprise peaks** (least-predictable frames), and reports forecasting skill
+(`1 − model/persistence`). A playhead sweeps both panels in time with the audio. Use a
+Phase 1 JEPA checkpoint:
+
+```bash
+P=$(conda run -n ta-jepa which python)
+$P scripts/demo_anticipation.py --ckpt runs/jepa_fma_grounded.ckpt --examples data/demo_clips
+```
+
+**Control knobs** (Phase 2a) — steer a clip's near-future along the validated dials
+(loudness, brightness/centroid, tonal-vs-noisy/harmonic_ratio) and A/B the neutral vs steered
+render. This one routes through the codec decoder, so it demonstrates *control*, not fidelity
+(the linear render head is lossy — vocals/transients thin out; see [`RESULTS.md`](RESULTS.md)).
+Use the `control_hp` checkpoint (`cond_dim=4`, so pass all four names; `--hidden-names` drops
+the weak pitch dial from the UI while keeping the model's input intact):
+
+```bash
+P=$(conda run -n ta-jepa which python)
+$P scripts/demo_knobs.py --ckpt runs/control_hp.ckpt \
+    --names loudness centroid harmonic_ratio pitch --hidden-names pitch
+```
+
 ## Tests
 
 ```bash
@@ -123,3 +153,7 @@ conda run -n ta-jepa pytest -q
 # include the EnCodec download/shape test:
 TAJEPA_RUN_CODEC_TESTS=1 conda run -n ta-jepa pytest -q
 ```
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
