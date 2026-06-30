@@ -9,6 +9,7 @@ audio analogue of an action-conditioned V-JEPA, not a static representation lear
 - Quick-reference invariants & commands for contributors (incl. Claude): [`CLAUDE.md`](CLAUDE.md)
 - Phase 0 baseline numbers (ESC-50 5-fold CV): [`RESULTS.md`](RESULTS.md)
 - Cloud runs (Modal GPUs + Cloudflare R2 storage): [`docs/cloud-modal.md`](docs/cloud-modal.md)
+- **Live demo** (HF Space): https://huggingface.co/spaces/Maeich/ta-jepa-anticipation-demo · model: https://huggingface.co/Maeich/ta-jepa-anticipation
 
 ## Status
 
@@ -118,8 +119,14 @@ $P scripts/extract_embeddings.py \
 
 ## Demos
 
-Two Gradio web demos (`pip install -e ".[demo]"`). Each opens a local URL; add `--share`
-for a public link, and an optional `--examples <dir>` of audio clips for one-click loading.
+**Try the anticipation demo live:**
+[huggingface.co/spaces/Maeich/ta-jepa-anticipation-demo](https://huggingface.co/spaces/Maeich/ta-jepa-anticipation-demo)
+(checkpoint: [Maeich/ta-jepa-anticipation](https://huggingface.co/Maeich/ta-jepa-anticipation);
+deploy steps in [`docs/huggingface.md`](docs/huggingface.md)).
+
+Run the demos locally with the `demo` extra (`pip install -e ".[demo]"`). Each opens a local
+URL; add `--share` for a public link, and an optional `--examples <dir>` of audio clips for
+one-click loading.
 
 **Anticipation** — the flagship, and the decoder-free, V-JEPA-style showcase. From past
 context only, the causal model predicts the near future *in latent space*; the demo plots
