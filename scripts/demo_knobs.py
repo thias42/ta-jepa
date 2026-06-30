@@ -17,8 +17,8 @@ the three dials that survived the closed-loop eval; pitch is weak and the transi
 (onset/attack/attack_time) are render-limited, so they are off the board by default
 (see RESULTS.md / ``run_controllability.py``).
 
-    python scripts/demo_knobs.py --ckpt runs/control.ckpt \
-        --names loudness centroid harmonic_ratio --examples data/cache/../demo_clips
+    python scripts/demo_knobs.py --ckpt runs/control_hp.ckpt \
+        --names loudness centroid harmonic_ratio pitch --hidden-names pitch
 
 Requires the demo extra:  pip install -e ".[demo]"   (adds gradio)
 """
@@ -79,6 +79,17 @@ def build_demo(args):
             f"--names has {len(names)} descriptor(s) {names} but the checkpoint expects "
             f"cond_dim={model.cond_dim}. Pass the same descriptors the model was trained on."
         )
+    # Hidden descriptors stay part of the cond_dim vector (the model needs all of them) but
+    # are held at 0 — not steered, no slider. Use it to drop weak/dead axes (e.g. pitch) from
+    # the board while keeping a checkpoint whose cond_dim includes them.
+    hidden = list(args.hidden_names or [])
+    bad = [n for n in hidden if n not in names]
+    if bad:
+        raise SystemExit(f"--hidden-names {bad} not in --names {names}")
+    visible = [n for n in names if n not in hidden]
+    if not visible:
+        raise SystemExit("--hidden-names hid every descriptor; leave at least one for a slider.")
+
     offset = args.offset if args.offset is not None else min(model.offsets)
     if offset not in model.offsets:
         raise SystemExit(f"--offset {offset} not in model offsets {model.offsets}")
@@ -124,8 +135,8 @@ def build_demo(args):
         if not path:
             return None, None, None
         x, ctrl, mu, sd, roundtrip = _ingest(path)
-        bumps = {n: v for n, v in zip(names, slider_vals)}
-        baseline = _render(x, ctrl, mu, sd, {n: 0.0 for n in names})
+        bumps = {n: v for n, v in zip(visible, slider_vals)}   # hidden names left at 0 (unsteered)
+        baseline = _render(x, ctrl, mu, sd, {})
         steered = _render(x, ctrl, mu, sd, bumps)
         roundtrip, baseline, steered = _peak_norm(roundtrip, baseline, steered)
         return (sr, roundtrip), (sr, baseline), (sr, steered)
@@ -145,7 +156,7 @@ def build_demo(args):
                 audio_in = gr.Audio(type="filepath", label="Input clip", sources=["upload", "microphone"])
                 sliders = [
                     gr.Slider(-3.0, 3.0, value=0.0, step=0.25, label=_LABELS.get(n, n))
-                    for n in names
+                    for n in visible
                 ]
                 btn = gr.Button("Render", variant="primary")
             with gr.Column():
@@ -167,6 +178,9 @@ def main() -> None:
     ap.add_argument("--ckpt", type=Path, required=True, help="Phase 2a control checkpoint.")
     ap.add_argument("--names", nargs="+", default=["loudness", "centroid", "harmonic_ratio"],
                     help="Descriptors the checkpoint was trained on (order matters).")
+    ap.add_argument("--hidden-names", nargs="+", default=None,
+                    help="Subset of --names to keep in the model's cond vector but hide from "
+                         "the UI (held at 0 / unsteered). Use to drop weak axes, e.g. pitch.")
     ap.add_argument("--offset", type=int, default=None,
                     help="Prediction offset to render (default: model's smallest).")
     ap.add_argument("--max-seconds", type=float, default=8.0,
@@ -185,7 +199,12 @@ def main() -> None:
                          '    pip install -e ".[demo]"')
 
     demo = build_demo(args)
-    demo.launch(server_name=args.host, server_port=args.port, share=args.share)
+    # Gradio only serves files under the launch dir / its temp dir by default; example clips
+    # living elsewhere (e.g. an absolute data/ or cache path) are blocked and won't play
+    # until their directory is explicitly allowed.
+    allowed = [str(Path(args.examples).resolve())] if args.examples else None
+    demo.launch(server_name=args.host, server_port=args.port, share=args.share,
+                allowed_paths=allowed)
 
 
 if __name__ == "__main__":
