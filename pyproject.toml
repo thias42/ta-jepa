@@ -32,8 +32,9 @@ dev = ["pytest>=8.0", "ruff>=0.4"]
 dac = ["descript-audio-codec>=1.0"]
 # Cloud runs on Modal with Cloudflare R2 storage (see modal_app.py, docs/cloud-modal.md).
 cloud = ["modal>=0.64", "boto3>=1.34"]
-# Web demo of the control dials (scripts/demo_knobs.py).
-demo = ["gradio>=4.0"]
+# Web demos: control dials (demo_knobs.py) + anticipation (demo_anticipation.py).
+# gradio>=6 — demo_anticipation passes `head` (playhead JS) to launch(), a 6.0 change.
+demo = ["gradio>=6.0", "matplotlib>=3.7"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
