@@ -39,7 +39,7 @@ import copy, torch
 from huggingface_hub import hf_hub_download
 from tajepa.models.jepa import JEPA          # pip install "tajepa @ git+https://github.com/thias42/ta-jepa.git"
 
-ck = torch.load(hf_hub_download("thias42/ta-jepa-anticipation", "jepa_fma_grounded.ckpt"),
+ck = torch.load(hf_hub_download("Maeich/ta-jepa-anticipation", "jepa_fma_grounded.ckpt"),
                 map_location="cpu", weights_only=False)
 hp, sd = ck["hyper_parameters"], ck["state_dict"]
 jepa = JEPA(in_dim=hp["in_dim"], dim=hp["dim"], enc_depth=hp["enc_depth"],
@@ -54,7 +54,7 @@ jepa.eval(); target.eval()
 ## Links
 
 - Code: https://github.com/thias42/ta-jepa
-- Interactive demo (Space): https://huggingface.co/spaces/thias42/ta-jepa-anticipation-demo
+- Interactive demo (Space): https://huggingface.co/spaces/Maeich/ta-jepa-anticipation-demo
 
 ## License
 

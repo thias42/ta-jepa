@@ -9,7 +9,7 @@ app_file: app.py
 pinned: false
 license: mit
 models:
-  - thias42/ta-jepa-anticipation
+  - Maeich/ta-jepa-anticipation
 ---
 
 # ta-jepa — anticipation
@@ -21,8 +21,8 @@ per-frame prediction error against a persistence baseline under a spectrogram, m
 (`1 − model/persistence`). Press play and a playhead sweeps both panels in time.
 
 - Code: https://github.com/thias42/ta-jepa
-- Model: https://huggingface.co/thias42/ta-jepa-anticipation
+- Model: https://huggingface.co/Maeich/ta-jepa-anticipation
 
 The checkpoint is downloaded at startup from the `MODEL_REPO` Space variable
-(default `thias42/ta-jepa-anticipation`). Drop audio files into an `examples/` folder in this
+(default `Maeich/ta-jepa-anticipation`). Drop audio files into an `examples/` folder in this
 Space to get one-click example clips.

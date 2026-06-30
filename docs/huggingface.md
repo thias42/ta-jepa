@@ -2,14 +2,13 @@
 
 Publishes two things:
 
-1. a **model repo** `thias42/ta-jepa-anticipation` holding `jepa_fma_grounded.ckpt`, and
-2. a **Gradio Space** `thias42/ta-jepa-anticipation-demo` running the anticipation demo,
+1. a **model repo** `Maeich/ta-jepa-anticipation` holding `jepa_fma_grounded.ckpt`, and
+2. a **Gradio Space** `Maeich/ta-jepa-anticipation-demo` running the anticipation demo,
    which installs `tajepa` from GitHub and downloads the checkpoint from (1) at startup.
 
 Space files live in [`space/anticipation/`](../space/anticipation); the model card to upload
-is [`hf-model-card.md`](hf-model-card.md). Adjust the `thias42` namespace if your HF username
-differs (also in `space/anticipation/app.py`, `space/anticipation/README.md`,
-`space/anticipation/requirements.txt`, and `hf-model-card.md`).
+is [`hf-model-card.md`](hf-model-card.md). The HF namespace is `Maeich`; the GitHub repo
+(used by the Space's pip install) is `thias42/ta-jepa` — these are intentionally different.
 
 ## 0. Authenticate (interactive — run it yourself)
 
@@ -26,7 +25,7 @@ P=$(conda run -n ta-jepa which python)
 $P - <<'PY'
 from huggingface_hub import HfApi
 api = HfApi()
-repo = "thias42/ta-jepa-anticipation"
+repo = "Maeich/ta-jepa-anticipation"
 api.create_repo(repo, repo_type="model", exist_ok=True)
 api.upload_file(path_or_fileobj="runs/jepa_fma_grounded.ckpt",
                 path_in_repo="jepa_fma_grounded.ckpt", repo_id=repo, repo_type="model")
@@ -45,7 +44,7 @@ P=$(conda run -n ta-jepa which python)
 $P - <<'PY'
 from huggingface_hub import HfApi
 api = HfApi()
-space = "thias42/ta-jepa-anticipation-demo"
+space = "Maeich/ta-jepa-anticipation-demo"
 api.create_repo(space, repo_type="space", space_sdk="gradio", exist_ok=True)
 api.upload_folder(folder_path="space/anticipation", repo_id=space, repo_type="space")
 print("space pushed:", space)

@@ -8,7 +8,7 @@ Loading is Lightning-free (plain torch.load + JEPA) so the Space doesn't depend 
 pytorch-lightning's checkpoint machinery at runtime.
 
 Config via Space variables (Settings → Variables):
-  MODEL_REPO  HF model repo holding the checkpoint   (default: thias42/ta-jepa-anticipation)
+  MODEL_REPO  HF model repo holding the checkpoint   (default: Maeich/ta-jepa-anticipation)
   CKPT_FILE   checkpoint filename within that repo    (default: jepa_fma_grounded.ckpt)
 """
 
@@ -25,7 +25,7 @@ from tajepa.config import CodecConfig
 from tajepa.demo.anticipation import HEAD_JS, build_anticipation_demo
 from tajepa.models.jepa import JEPA
 
-MODEL_REPO = os.environ.get("MODEL_REPO", "thias42/ta-jepa-anticipation")
+MODEL_REPO = os.environ.get("MODEL_REPO", "Maeich/ta-jepa-anticipation")
 CKPT_FILE = os.environ.get("CKPT_FILE", "jepa_fma_grounded.ckpt")
 
 
