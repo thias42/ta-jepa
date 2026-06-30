@@ -657,6 +657,10 @@ Terms and abbreviations used in this doc and the project.
 - **Frame encoder** (`f_θ`) — the network that turns the input sequence into latents `z`.
 - **Grounding / reconstruction anchor** — auxiliary term forcing the latent to be able to
   reconstruct the input codec frame, so it stays acoustically informative.
+- **FiLM** — Feature-wise Linear Modulation. Conditions a layer by an affine transform
+  `(1 + γ(c))·h + β(c)` whose per-feature scale `γ` and shift `β` are predicted from a
+  control signal `c`. Here it injects the descriptor *delta* into the predictor heads,
+  zero-initialized so the model starts unconditioned and learns to lean on the control.
 
 **Training & anti-collapse**
 - **EMA** — Exponential Moving Average. The *target encoder* `f_θ̄` is a slowly-updated copy

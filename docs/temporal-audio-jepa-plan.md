@@ -117,7 +117,7 @@ The core of the project. Validate this fully before adding anything.
 
 The single-modality plan above is Phase 1–4. The larger thesis — and the stronger novelty story — is that audio prediction is one sense of an embodied, multisensory world model. Animals don't model sound in isolation; the bicycle-and-headphones intuition is that audio carries action-relevant state (approach, occlusion, off-camera events) that vision misses. The audio JEPA is best conceived as the audio branch of an audio-visual JEPA that shares a predicted latent space with vision.
 
-**Where the frontier actually is (as of mid-2026).** V-JEPA 2 / V-JEPA 2-AC is the embodied template — action-conditioned future-latent prediction, planning via MPC — but vision-only. The audio-visual world model now exists as exactly one entry, AVWM / AV-CDiT (Wang et al., arXiv 2512.00883), and it is **generative diffusion, not JEPA**: it denoises future visual + audio latents with a DDPM objective and decodes back to pixels and audio. Its soundscape is near-trivial (a single stationary telephone ringtone in synthetic SoundSpaces scenes, four discrete nav actions), it is synthetic-only, and audio is a second-class citizen needing architectural protection from the vision-pretrained backbone. No code or dataset is released. So the JEPA-flavoured, real-audio, balanced-modality version is open.
+**Where the frontier actually is (as of mid-2026).** V-JEPA 2 / V-JEPA 2-AC is the embodied template — action-conditioned future-latent prediction, planning via MPC — but vision-only. The audio-visual world model now exists as exactly one entry, AVWM / AV-CDiT (Wang et al., *Audio-Visual World Models: Grounding Multisensory Imagination for Embodied Agents*, [arXiv:2512.00883](https://arxiv.org/abs/2512.00883)), and it is **generative diffusion, not JEPA**: it denoises future visual + audio latents with a DDPM objective and decodes back to pixels and audio. Its soundscape is near-trivial (a single stationary telephone ringtone in synthetic SoundSpaces scenes, four discrete nav actions), it is synthetic-only, and audio is a second-class citizen needing architectural protection from the vision-pretrained backbone. No code or dataset is released. So the JEPA-flavoured, real-audio, balanced-modality version is open.
 
 **The extension (a natural second paper).** Keep the audio branch exactly as planned (causal encoder, EMA target, VICReg, codec embeddings), and add a vision branch plus a cross-modal predictor:
 
@@ -147,3 +147,54 @@ PyTorch Lightning · EnCodec/DAC (HF) · madmom / librosa / CREPE for descriptor
 ## Sequencing
 
 Phase 0: days. Phase 1: the real work, weeks — gate everything on validating it. Phase 2: weeks. Phase 3: the hard part. Phase 4: optional. The multimodal extension is a separate, later effort that depends entirely on Phase 1 succeeding. Don't proceed past Phase 1 until the causal audio backbone beats persistence and is competitive on X-ARES — and don't start the cross-modal work until it does.
+
+---
+
+## References
+
+Sources referenced above, with arXiv links (canonical links for the few without an arXiv entry).
+
+**Predictive coding & self-supervised representation learning**
+- APC — [An Unsupervised Autoregressive Model for Speech Representation Learning](https://arxiv.org/abs/1904.03240)
+- Multi-Target APC — [Improved Speech Representations with Multi-Target Autoregressive Predictive Coding](https://arxiv.org/abs/2004.05274)
+- VQ-APC — [Vector-Quantized Autoregressive Predictive Coding](https://arxiv.org/abs/2005.08392)
+- CPC — [Representation Learning with Contrastive Predictive Coding](https://arxiv.org/abs/1807.03748)
+- data2vec — [data2vec: A General Framework for Self-supervised Learning in Speech, Vision and Language](https://arxiv.org/abs/2202.03555)
+- wav2vec 2.0 — [wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations](https://arxiv.org/abs/2006.11477)
+- VICReg — [VICReg: Variance-Invariance-Covariance Regularization for Self-Supervised Learning](https://arxiv.org/abs/2105.04906)
+
+**JEPA, codec-based SSL & world models**
+- A-JEPA — [A-JEPA: Joint-Embedding Predictive Architecture Can Listen](https://arxiv.org/abs/2311.15830)
+- Codec2Vec — [Codec2Vec: Self-Supervised Speech Representation Learning Using Neural Speech Codecs](https://arxiv.org/abs/2511.16639)
+- MuQ — [MuQ: Self-Supervised Music Representation Learning with Mel Residual Vector Quantization](https://arxiv.org/abs/2501.01108)
+- V-JEPA 2 / V-JEPA 2-AC — [V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning](https://arxiv.org/abs/2506.09985)
+- Genie — [Genie: Generative Interactive Environments](https://arxiv.org/abs/2402.15391)
+- LAPO — [Learning to Act without Actions](https://arxiv.org/abs/2312.10812)
+- AVWM / AV-CDiT (Wang et al.) — [Audio-Visual World Models: Grounding Multisensory Imagination for Embodied Agents](https://arxiv.org/abs/2512.00883)
+
+**Neural codecs & generative audio**
+- EnCodec — [High Fidelity Neural Audio Compression](https://arxiv.org/abs/2210.13438)
+- DAC — [High-Fidelity Audio Compression with Improved RVQGAN](https://arxiv.org/abs/2306.06546)
+- AudioLM — [AudioLM: a Language Modeling Approach to Audio Generation](https://arxiv.org/abs/2209.03143)
+- LLM-Codec — [UniAudio 1.5: Large Language Model-driven Audio Codec is A Few-shot Audio Task Learner](https://arxiv.org/abs/2406.10056)
+- AudioMNTP — [Generative Audio Language Modeling with Continuous-valued Tokens and Masked Next-Token Prediction](https://arxiv.org/abs/2507.09834)
+
+**Audio-visual self-supervised learning**
+- XDC — [Self-Supervised Learning by Cross-Modal Audio-Video Clustering](https://arxiv.org/abs/1911.12667)
+- AVID — [Audio-Visual Instance Discrimination with Cross-Modal Agreement](https://arxiv.org/abs/2004.12943)
+
+**Control conditioning & descriptors**
+- FiLM — [FiLM: Visual Reasoning with a General Conditioning Layer](https://arxiv.org/abs/1709.07871)
+- DDSP — [DDSP: Differentiable Digital Signal Processing](https://arxiv.org/abs/2001.04643)
+- CREPE — [CREPE: A Convolutional Representation for Pitch Estimation](https://arxiv.org/abs/1802.06182)
+- madmom — [madmom: a new Python Audio and Music Signal Processing Library](https://arxiv.org/abs/1605.07008)
+- librosa — [librosa: Audio and Music Signal Analysis in Python](https://librosa.org/) (SciPy 2015; no arXiv)
+
+**Benchmarks & datasets**
+- X-ARES — [X-ARES: A Comprehensive Framework for Assessing Audio Encoder Performance](https://arxiv.org/abs/2505.16369)
+- FSD50K — [FSD50K: An Open Dataset of Human-Labeled Sound Events](https://arxiv.org/abs/2010.00475)
+- FMA — [FMA: A Dataset For Music Analysis](https://arxiv.org/abs/1612.01840)
+- AudioSet — [Audio Set: An Ontology and Human-Labeled Dataset for Audio Events](https://research.google.com/audioset/) (ICASSP 2017; no arXiv)
+- ESC-50 — [ESC: Dataset for Environmental Sound Classification](https://github.com/karolpiczak/ESC-50) (ACM MM 2015; no arXiv)
+- UrbanSound8K — [A Dataset and Taxonomy for Urban Sound Research](https://urbansounddataset.weebly.com/urbansound8k.html) (ACM MM 2014; no arXiv)
+- MTG-Jamendo — [The MTG-Jamendo Dataset for Automatic Music Tagging](https://mtg.github.io/mtg-jamendo-dataset/) (ICML 2019 workshop; no arXiv)
