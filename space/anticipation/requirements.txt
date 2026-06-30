@@ -1,0 +1,4 @@
+# The ta-jepa package (with the demo extra: gradio + matplotlib) straight from GitHub.
+# Pulls torch/transformers/librosa/soundfile etc. transitively; HF installs CPU wheels.
+tajepa[demo] @ git+https://github.com/thias42/ta-jepa.git
+huggingface_hub>=0.23
