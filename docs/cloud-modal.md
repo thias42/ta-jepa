@@ -109,6 +109,15 @@ modal run modal_app.py::evaluate --eval-kind forecast --dataset esc50 \
     --extra-args "--max-clips 300"
 ```
 
+**Phase 2 intervention cache.** Applies the actions in the waveform domain, so it needs the
+persisted audio rather than the codec cache:
+
+```bash
+modal run modal_app.py::persist_audio --dataset fma_small        # one-time, if not already
+modal run --detach modal_app.py::make_interventions --dataset fma_small \
+    --extra-args "--seconds 10 --p-axis 0.6"
+```
+
 **Seed sweeps (error bars).** Single runs cannot separate a +3–10% margin over the AR floor
 from seed noise, so headline claims need several. `train_seeds` trains them sequentially in
 one container — the multi-domain caches are ~10 GB and one container per seed would re-pull

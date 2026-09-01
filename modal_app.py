@@ -244,6 +244,27 @@ def train(
     print(f"DONE train: {save_name} -> R2 runs/{save_name}.ckpt")
 
 
+@app.function(image=image, secrets=[r2_secret], gpu=EXTRACT_GPU,
+              ephemeral_disk=DISK_MIB, timeout=8 * 3600)
+def make_interventions(dataset: str, extra_args: str = "") -> None:
+    """Phase 2: build the paired (clean, intervened) action cache from persisted audio.
+
+    Needs the raw audio, not the codec cache — the intervention is applied in the waveform
+    domain and both sides are then encoded in one pass, so they are frame-aligned by
+    construction. Run ``persist_audio`` for the dataset first.
+    """
+    audio_dir = _download_tar(f"audio/{dataset}.tar", f"{SCRATCH}/audio")
+    manifest = f"{SCRATCH}/manifests/{dataset}.jsonl"
+    _download(f"manifests/{dataset}.jsonl", manifest)
+    out = f"{SCRATCH}/cache/interventions/{dataset}"
+    _run([
+        "python", f"{REPO}/scripts/make_interventions.py",
+        "--manifest", manifest, "--out", out, *shlex.split(extra_args),
+    ])
+    _upload_dir_tar(out, f"cache/interventions/{dataset}.tar")
+    print(f"DONE make_interventions: {dataset} -> R2 cache/interventions/{dataset}.tar "
+          f"(audio from {audio_dir})")
+
 @app.function(image=image, secrets=[r2_secret], gpu=TRAIN_GPU,
               ephemeral_disk=DISK_MIB, timeout=20 * 3600)
 def train_seeds(

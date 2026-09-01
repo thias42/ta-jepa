@@ -185,3 +185,57 @@ def pad_collate(batch: list[dict]) -> dict:
             ctrl[i, : b["control"].shape[0]] = b["control"]
         collated["control"] = ctrl
     return collated
+
+
+class InterventionPairDataset(Dataset):
+    """Paired (clean, intervened) codec sequences plus the per-frame action.
+
+    Serves the Phase 2 action-conditioned data written by ``scripts/make_interventions.py``:
+    each ``.npz`` holds ``clean [T,D]``, ``intervened [T,D]`` and ``action [T,A]``, frame-
+    aligned by construction (both sides are encoded in one pass).
+
+    The pairing is the point. Earlier Phase 2 work could only measure control by
+    re-extracting a descriptor from rendered audio, which made *codec-recoverability of the
+    descriptor* the gate on which axes were usable. Here the target is the true intervened
+    signal, so that gate does not apply.
+
+    Windows are cropped around the intervention where possible, so a sampled window actually
+    contains the transition — a window drawn entirely before or after it carries an all-zero
+    action and teaches nothing about the response.
+    """
+
+    def __init__(
+        self,
+        cache_dir: str | Path,
+        window_frames: int = 256,
+        random_crop: bool = True,
+        centre_on_event: bool = True,
+    ) -> None:
+        self.dir = Path(cache_dir)
+        self.files = sorted(self.dir.glob("*.npz"))
+        if not self.files:
+            raise FileNotFoundError(f"No .npz intervention pairs under: {self.dir}")
+        self.window_frames = window_frames
+        self.random_crop = random_crop
+        self.centre_on_event = centre_on_event
+
+    def __len__(self) -> int:
+        return len(self.files)
+
+    def __getitem__(self, idx: int) -> dict:
+        z = np.load(self.files[idx])
+        clean = torch.from_numpy(z["clean"]).float()
+        inter = torch.from_numpy(z["intervened"]).float()
+        action = torch.from_numpy(z["action"]).float()
+        t, w = clean.shape[0], self.window_frames
+        if t > w:
+            nz = torch.nonzero(action.abs().sum(-1)).flatten()
+            if self.centre_on_event and nz.numel():
+                lo = max(0, min(int(nz[0]) - w // 3, t - w))
+                hi = max(0, min(int(nz[-1]), t - w))
+                start = int(torch.randint(lo, hi + 1, (1,))) if (self.random_crop and hi > lo) else lo
+            else:
+                start = int(torch.randint(0, t - w + 1, (1,))) if self.random_crop else 0
+            clean, inter, action = (v[start : start + w] for v in (clean, inter, action))
+        return {"features": clean, "intervened": inter, "action": action,
+                "length": clean.shape[0], "clip_id": self.files[idx].stem}

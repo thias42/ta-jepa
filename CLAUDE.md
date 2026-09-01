@@ -192,6 +192,16 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   transition (`train_residual.py`, `run_residual_eval.py`, Modal `train_residual`/`residual_eval`).
   **Result: partial — 4/16 codes became onset-dominant (vs 0/16 in pure 2b) but weak and
   inconsistent**; transients stayed render-limited (same wall as 2a).
+- `src/tajepa/interventions.py` + `scripts/make_interventions.py` — **Phase 2 exogenous
+  actions**: gain / spectral tilt / reverb applied to audio as *timed events*, with the
+  per-frame action delta. Level is re-normalised after tilt and reverb so **gain is the only
+  axis that changes level** (measured |corr| with Δlevel: gain 0.75, tilt 0.006, reverb 0.03)
+  — this is what stops the loudness collapse that killed three Phase 2a attempts. Reverb is
+  **gated on a transient score**: a room is heard through its response to transients, and the
+  applied RT60 is recoverable at R² +0.22 on transient-rich clips vs −2.0 on stationary ones,
+  so firing it on rain or wind would command an action with no observable consequence — how
+  the onset dial died. Output is a paired `.npz` cache (clean / intervened / action) read by
+  `InterventionPairDataset`; both sides are encoded in one pass, so they are frame-aligned.
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.

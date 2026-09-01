@@ -206,6 +206,38 @@ It also supplies the honest 2b re-test: given (clean, intervened) pairs, can the
 recover the applied action? Identifiability is now by construction, so a codebook that still
 collapses onto energy would be a real finding rather than a foregone one.
 
+#### Pre-flight results (2026-09-01, 220 ESC-50 clips)
+
+Built and measured before training anything — the discipline that the transient thread cost
+us by skipping. `src/tajepa/interventions.py`, `scripts/make_interventions.py`.
+
+**Decorrelation holds.** |corr| of each commanded axis with the measured level change:
+gain **0.750** (it is the level axis), tilt **0.006**, reverb **0.029**. Sampled axes are
+mutually independent (|corr| 0.08–0.13). Rule 2 works by construction, so the loudness
+collapse that killed three Phase 2a attempts cannot recur here.
+
+**Identifiability of the applied action** from the (clean, intervened) codec pair, held out:
+
+| axis | linear | MLP |
+|---|---|---|
+| gain | **+0.61** | — |
+| tilt | +0.25 | **+0.30** |
+| reverb (RT60) | −0.62 | **+0.17** |
+
+Reverb repeats the onset lesson exactly: linearly invisible, nonlinearly recoverable. Do not
+read a linear null as absence.
+
+**Reverb is strongly content-dependent, and that changed the design.** Splitting the reverb
+clips by how transient the *clean* audio is: R² **+0.216** on transient-rich clips versus
+**−2.017** on stationary ones. A room is heard through its response to transients; on rain or
+wind a reverb change is close to physically invisible. Commanding an action with no observable
+consequence is precisely what teaches a predictor to ignore that axis — it is how the Phase 2a
+onset dial died — so `sample_spec` now **gates reverb on a transient score** and simply does
+not fire it on flat content. Verified: 0/60 firings on stationary noise, 37/60 on impulsive.
+
+*Caveat:* n=220 with a 384-feature probe is under-powered; the ordering is trustworthy, the
+absolute values are not. Re-measure on the full training set.
+
 #### Risk: learning to detect the DSP
 
 The failure mode is that the model learns to recognise the applied processing rather than

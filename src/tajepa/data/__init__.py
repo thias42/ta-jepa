@@ -8,6 +8,7 @@ from .manifest import (
 from .audio_dataset import AudioChunkDataset
 from .embedding_dataset import (
     EmbeddingSequenceDataset,
+    InterventionPairDataset,
     ManifestEmbeddingDataset,
     PairedSequenceDataset,
     pad_collate,
@@ -21,6 +22,7 @@ __all__ = [
     "write_manifest",
     "AudioChunkDataset",
     "EmbeddingSequenceDataset",
+    "InterventionPairDataset",
     "ManifestEmbeddingDataset",
     "PairedSequenceDataset",
     "pad_collate",
