@@ -1,4 +1,10 @@
-# The ta-jepa package (with the demo extra: gradio + matplotlib) straight from GitHub.
+# The ta-jepa package (with the demo extra: gradio + matplotlib) from GitHub.
 # Pulls torch/transformers/librosa/soundfile etc. transitively; HF installs CPU wheels.
-tajepa[demo] @ git+https://github.com/thias42/ta-jepa.git
+#
+# PINNED to an exact commit, deliberately. Tracking a moving branch made the Space's
+# behaviour depend on whatever main happened to be at build time, and — because this file's
+# content decided the pip layer cache key — an unchanged requirements.txt could silently
+# reuse a stale install. Bump this SHA to ship new package code to the Space; editing this
+# line is what busts the cache.
+tajepa[demo] @ git+https://github.com/thias42/ta-jepa.git@b6ba6900bf6706ea560e6daef1500451d839039a
 huggingface_hub>=0.23

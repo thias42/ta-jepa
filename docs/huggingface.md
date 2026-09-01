@@ -69,9 +69,17 @@ CLI equivalents exist (`hf repo create … --repo-type space --space-sdk gradio`
   scores against it because persistence is a weak bar; shipping it pre-fitted keeps the
   number reproducible. Regenerate with `tajepa.eval.fit_latent_ar` + `LinearAR.save` if you
   change checkpoints — an AR fitted for one checkpoint is meaningless for another.
-- **Push order matters:** the Space installs `tajepa[demo]` from GitHub `main`, and
-  `app.py` now calls `build_anticipation_demo(..., ar_state=...)`. Push GitHub **before**
-  the Space, or a rebuild will hit an older package without that argument.
+- **The Space pins an exact commit.** `space/anticipation/requirements.txt` installs
+  `tajepa[demo] @ git+https://github.com/thias42/ta-jepa.git@<sha>`, not a branch. So:
+  push GitHub first, then **bump that SHA** to whatever you just pushed, then upload the
+  Space. Forgetting the bump means the Space keeps running the old package — which is the
+  safe failure (stale but working), whereas the old unpinned form could silently reuse a
+  cached pip layer *or* pick up an unrelated main. The SHA edit is also what busts HF's
+  build cache, since the layer key is this file's content.
+- **Check the startup log.** The demo prints which AR reference it loaded:
+  `[ta-jepa] AR reference: linear AR(4) loaded from …`. If it prints `AR reference: NONE`,
+  `assets/ar_latent_fma.pt` did not ship and the Space is reporting only the weak
+  persistence baseline.
 - **Config:** the Space reads `MODEL_REPO` / `CKPT_FILE` Space variables (Settings →
   Variables) if you host the checkpoint elsewhere.
 - **GitHub must be public** for the Space's `pip install … git+https://github.com/...` to
