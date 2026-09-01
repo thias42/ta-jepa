@@ -6,5 +6,5 @@
 # content decided the pip layer cache key — an unchanged requirements.txt could silently
 # reuse a stale install. Bump this SHA to ship new package code to the Space; editing this
 # line is what busts the cache.
-tajepa[demo] @ git+https://github.com/thias42/ta-jepa.git@24a9d8877d674f79def2ab468f2687b0e72592fa
+tajepa[demo] @ git+https://github.com/thias42/ta-jepa.git@46f29fb8ed82818df922372b06c6b5f0d94a6004
 huggingface_hub>=0.23
