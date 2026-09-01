@@ -24,10 +24,11 @@ This document is the original design rationale; the body below is preserved as w
   never learned there; that is a real limitation and a separate one. The
   forecasting eval also scored the grounding head in a space it never emitted into, which
   manufactured the "music-trained decoder doesn't transfer" finding (sign flips once fixed)
-  — which is what the multi-domain campaign was launched to close. Re-run through the fixed
-  eval, the FMA+FSD50K checkpoint is at parity with AR(4) in codec space and −15% to −26%
-  against it in latent space, i.e. *further* behind than the FMA-only model even as its
-  persistence-relative number rose from +17% to +29%. Both defects are fixed in code; see
+  — which is what the multi-domain campaign was launched to close. Re-run in-context, the
+  FMA+FSD50K checkpoint beats AR(4) at every horizon (+0.023 to +0.027 codec, +6.6% to
+  +10.5% latent) and is the only one of the three models to clear that floor on ESC-50
+  transfer. Multi-domain data did not improve the AR-relative number over FMA-only
+  (both ~+7-10%); it moved only the persistence-relative one (+34% to +48%). Both defects are fixed in code; see
   the Correction section of `RESULTS.md`. Open experiment: horizons well beyond the
   13–107 ms tested, where linear extrapolation fails.
 - **Control axis selection (#4 / Phase 2a).** What predicts controllability is
@@ -103,6 +104,26 @@ The core of the project. Validate this fully before adding anything.
 - **2a — Supervised descriptors.** Extract frame-aligned loudness, spectral centroid, onset density, chroma/pitch (+voicing). Inject via FiLM or cross-attention into `g_φ`. Condition on the *delta* to apply, so control is learned as transition modulation rather than absolute state.
 - **2b — Learned latent actions.** Inverse model `q(a_t | z_t, z_{t+1})` with a small VQ bottleneck, inserted mid-stack (VQ-APC found mid-stack insertion best; expect the pretext loss to *worsen* while representation/control quality improves — so don't use prediction loss for model selection). Drop the inverse model at inference; drive with chosen codes.
 - **Risk**: latent actions can shortcut / leak. Mitigate with commitment loss, a deliberately small codebook, and entropy/KL regularization on code usage.
+
+## Phase 2.5 — Positional encoding (decided; next phase)
+
+**Replace absolute sinusoidal positional encodings with RoPE or ALiBi.** The encoder
+currently adds absolute sinusoidal PE, so the model is only valid below its training
+`--window` (256 frames = 3.41 s at 75 Hz). `sinusoidal_pe` is closed-form and returns values
+at any index, so over-length inference fails *silently*: past the window the representation
+is out of distribution and forward prediction drops below persistence. This inverted a
+headline result once (in-window +6% vs AR(4); scored to 512 frames, −15%).
+
+`windowed_predict` is the stopgap, and it has a measured cost: each window boundary leaves a
+~20% error spike over 2–3 frames. That is not a history shortage — widening the overlap
+barely moves it (stride 128→32: 21%→19%) — but a discontinuity in the target latent
+trajectory where two windows meet (`|z[t+1]-z[t]|` is 1.7× its local value at the seam).
+Overlap cannot remove a seam; only a single pass over the whole clip can.
+
+RoPE and ALiBi both extrapolate beyond the trained length, which removes the windowing, the
+seam, and the silent-failure mode together. This should land before Phase 3: rollout
+stability over long horizons is not meaningful while the encoder cannot represent long
+sequences in the first place.
 
 ## Phase 3 — Rollout stability
 

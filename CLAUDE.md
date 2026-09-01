@@ -206,7 +206,11 @@ so cloud == local code. Setup + commands: `docs/cloud-modal.md`. Cloud deps: `pi
   inference fails silently: past the window the forecast drops *below persistence*, which
   once inverted a headline (in-window +6% vs AR(4), scored to 512 frames −15%). Training
   records the window as `context_frames`; eval clamps to it by default; long audio goes
-  through `windowed_predict`. RoPE/ALiBi or mixed-length training would lift the limit.
+  through `windowed_predict` — a stopgap that leaves a ~20% error spike at each window seam
+  (a discontinuity in the recomputed target latents, not a history shortage; more overlap
+  does not help). **Decided: move the encoder to RoPE or ALiBi** (plan, Phase 2.5) before
+  Phase 3 — rollout stability is not meaningful while the encoder cannot represent long
+  sequences at all.
 - **The grounding head emits into a recorded space.** `grounding_loss` requires explicit
   `mean`/`std`; training computes them once via `data.stats.codec_stats` and stores them on
   the model, so they travel in the checkpoint. Anything consuming the head's output must use

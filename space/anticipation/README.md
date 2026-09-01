@@ -49,8 +49,11 @@ the audio gets harder, but because those positions were never learned. The same 
 inside a 256-frame window score normally.
 
 The demo therefore runs long audio through overlapping ≤256-frame windows, so every frame you
-see has both an in-range position and real history behind it. Lifting the limit properly would
-mean a positional scheme that extrapolates (RoPE/ALiBi) or training on longer windows.
+see has both an in-range position and real history behind it. This is a stopgap with a visible
+cost: **you will see a small error spike every 3.41 s**, where two windows meet. It lasts 2–3
+frames and is an artifact of the windowing, not of the audio — the target trajectory jumps
+slightly at the seam, and no amount of window overlap removes that. Lifting the limit properly
+means a positional scheme that extrapolates (RoPE/ALiBi), which is the planned next step.
 
 ## Examples
 

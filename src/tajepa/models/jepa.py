@@ -306,6 +306,15 @@ def windowed_predict(jepa, target, x, context: int, stride: int | None = None):
     first window is kept whole — those frames have less history, but that is genuine causal
     warm-up, not extrapolation.
 
+    **Known artifact:** each window boundary leaves a seam — a ~20% error spike lasting
+    2-3 frames. It is *not* a shortage of history: widening the overlap barely helps
+    (stride 128 -> 32 moves the spike only 21% -> 19%). The cause is that the target latent
+    sequence is recomputed per window, so its trajectory jumps where two windows meet
+    (measured: ``|z[t+1]-z[t]|`` is 1.7x its local value at the seam). No amount of overlap
+    removes that; only a positional scheme that lets one pass cover the whole clip does.
+    This is a stopgap — the real fix is RoPE or ALiBi in the encoder, planned for the next
+    phase, after which long sequences need no windowing at all.
+
     Returns ``(preds {offset: [1, T, dim]}, z_target [1, T, dim])`` covering all ``T``.
     """
     t = x.shape[1]

@@ -199,10 +199,10 @@ training campaign. Multi-domain data is worth having on its own merits (it is th
 intent), but it was not fixing what it was said to fix, and part of the reported
 improvement is the artifact shrinking: FSD50K is statistically far closer to ESC-50 than
 FMA is, so the multi-domain model's mismatch was smaller by construction. The `FMA+FSD50K`
-checkpoint has now been re-run through the fixed eval — see "The multi-domain checkpoint,
-re-run through the fixed eval" below. Short version: against AR(4) it is at parity in codec
-space and further behind in latent space than the FMA-only model, so the campaign's stated
-purpose does not survive.
+checkpoint has now been re-run in-context — see "The multi-domain checkpoint, re-run
+in-context" below. Short version: it beats AR(4) at every horizon, but no more so than the
+FMA-only model does, so the *transfer gap* this campaign was launched to close was an
+artifact; the broader data still earns its place on the general-audio thesis.
 
 *Fix:* codec statistics are computed once from the training cache, recorded on the model
 as buffers (`set_codec_stats`), and saved in the checkpoint. Forecasts are produced in raw
@@ -217,6 +217,11 @@ trivially weak, so "beats persistence" — the criterion Phase 1 was re-gated on
 probe failed — certifies almost nothing. A ridge **AR(4)** on the last four frames, fit in
 closed form on FMA (the models' own training data, so transfer stays matched), is the
 honest floor.
+
+> **Superseded by "Correction to the correction" below.** These tables score to 512 frames
+> / full 375-frame clips, so 32–50% of every figure is positional extrapolation past the
+> 256-frame training window. The negative skill-vs-AR they report is that artifact, not the
+> model. In-context the JEPA beats AR(4) at every horizon in both domains. Kept for the record.
 
 **ESC-50 (transfer)** — cosine of predicted vs true future codec frame, gain over AR(4):
 
@@ -370,10 +375,11 @@ JEPA latent-space skill (own space): ESC-50 +17/+34/+45/+41%, FMA +13/+23/+32/+3
 > **Retracted — the heading's claim is false.** The gap this section reports closing was an
 > artifact of scoring the grounding head against the eval set's statistics rather than its
 > own; it was never there to close. Re-run through the fixed eval against an AR(4) floor,
-> the multi-domain model is at parity in codec space and *further* behind in latent space
-> than the FMA-only model. See "Correction — the forecasting evaluation was measuring two
-> wrong things" and "The multi-domain checkpoint, re-run through the fixed eval" above.
-> Kept as written for the record.
+> the multi-domain model beats AR(4) at every horizon (+0.023 to +0.027 cosine) — but that
+> is a *different* claim from the one this heading makes, which was about closing a transfer
+> gap that the normalization defect had invented. See "Correction — the forecasting
+> evaluation was measuring two wrong things" and "The multi-domain checkpoint, re-run
+> in-context" above. Kept as written for the record.
 
 The diagnosis predicted the ESC-50 codec-forecasting gap was the *music-trained decoder*
 failing to generalize — not a model defect. Test: pretrain a multi-domain JEPA on FMA
@@ -465,53 +471,42 @@ would training on longer or mixed-length windows. Until then, inference must win
 the trained window now travels in the checkpoint as `context_frames` so evaluation clamps to
 it by default instead of silently extrapolating.
 
-> **Still outstanding:** the multi-domain (FMA+FSD50K) table below was measured on full
-> 375-frame ESC-50 clips, so ~32% of its frames are beyond the window and its
-> skill-vs-AR figures understate the model for the same reason. It needs re-running through
-> the context-aware eval; the checkpoint lives in R2, not locally.
+### The multi-domain checkpoint, re-run in-context
 
-### The multi-domain checkpoint, re-run through the fixed eval
+`jepa_multi` (FMA + FSD50K, 25k steps) on ESC-50, scored **inside the 256-frame training
+window**, AR(4) fit on its own training mixture (`--context-frames 256`, since the checkpoint
+predates the recorded window):
 
-`jepa_multi` (FMA + FSD50K, 25k steps) re-evaluated on ESC-50 with both defects fixed, AR(4)
-fit on **FMA + FSD50K** (its own training mixture, strided across both caches):
-
-| k | persistence | **AR(4)** | APC | JEPA-multi |
+| k | persistence | AR(4) | APC | JEPA-multi |
 |---|---|---|---|---|
-| 1 | 0.594 | **0.685** | 0.680 (−0.005) | 0.675 (**−0.010**) |
-| 2 | 0.562 | **0.659** | — | 0.656 (−0.003) |
-| 3 | 0.552 | **0.651** | 0.646 (−0.005) | — |
-| 4 | 0.539 | **0.642** | — | 0.640 (−0.002) |
-| 5 | 0.534 | **0.636** | 0.630 (−0.005) | — |
-| 8 | 0.523 | **0.616** | — | 0.619 (+0.002) |
+| 1 | 0.578 | 0.670 | 0.665 (−0.005) | **0.692 (+0.023)** |
+| 2 | 0.542 | 0.642 | — | **0.667 (+0.026)** |
+| 3 | 0.531 | 0.632 | 0.628 (−0.004) | — |
+| 4 | 0.516 | 0.621 | — | **0.646 (+0.024)** |
+| 5 | 0.512 | 0.615 | 0.610 (−0.004) | — |
+| 8 | 0.498 | 0.591 | — | **0.618 (+0.027)** |
 
 | latent space | k=1 | k=2 | k=4 | k=8 |
 |---|---|---|---|---|
-| vs latent-persistence | +28.8% | +45.7% | +51.2% | +45.1% |
-| **vs latent AR(4)** | **−18.5%** | **−14.5%** | **−20.2%** | **−26.0%** |
+| vs latent-persistence | +47.8% | +62.0% | +67.1% | +64.4% |
+| **vs latent AR(4)** | **+6.6%** | **+10.5%** | **+9.7%** | **+9.1%** |
 
-The persistence row **reproduces the published +29/46/51/45 exactly**, so this is the same
-model and the same measurement — only the floor has changed.
+Against the contaminated (375-frame) measurement this replaces: codec −0.010…+0.002 →
+**+0.023…+0.027**; latent vs AR −18.5…−26.0% → **+6.6…+10.5%**.
 
-Three things follow:
-
-- **Against AR(4) the multi-domain model is at parity in codec space** (−0.010 to +0.002)
-  and clearly behind in its own latent space. So "beats persistence at every horizon on
-  unseen environmental sound, matches APC" is true and also not informative: a closed-form
-  linear fit does as well or better. APC sits at the same place (−0.005 throughout).
-- **The multi-domain model's latent deficit is *worse* than the FMA-only model's**
-  (−18.5…−26.0 vs −17.0…−12.2), and it widens with horizon. Broader pretraining moved the
-  persistence-relative number up sharply (+17% → +29% at k=1) while moving the
-  AR-relative number *down*. The metric that improved is the one that does not discriminate
-  — which is the cleanest available demonstration of why the floor had to change.
-- Absolute cosines are not comparable between this table and the FMA-only one above: each
-  is standardized in its own model's training space, and each AR is fit on its own model's
-  training mixture. Only the within-table gains are comparable, which is the point of
-  scoring every predictor in one shared space per run.
-
-**So the multi-domain campaign's stated purpose does not survive.** It was launched to close
-an ESC-50 forecasting gap that Defect 1 had manufactured; the gap was not real, and against a
-floor that means something the broader model is not ahead. Multi-domain data may still be
-right for the general-audio thesis — but it is not evidence that Phase 1 works.
+- **The multi-domain model beats AR(4) at every horizon, in both spaces.** It also beats
+  APC, which is itself marginally *behind* AR(4) here (−0.004 to −0.005) — so on ESC-50
+  transfer the causal JEPA is the only one of the three that clears the linear floor.
+- **The earlier claim that broader pretraining "lowered the AR-relative number" was also
+  contamination.** In-context the two models are level on that metric (FMA-only
+  +6.3/+10.1/+10.4/+9.4, multi-domain +6.6/+10.5/+9.7/+9.1). What multi-domain data
+  actually bought is visible only on the persistence-relative number, which rose from
+  +34.3% to +47.8% at k=1 while the AR-relative number stayed flat. The weaker, correct
+  version of the point stands: the persistence metric moves for reasons the AR metric does
+  not, so it is the less informative of the two.
+- Cross-model caution: the FMA-only and multi-domain figures use different standardization
+  spaces and different AR fits (each matched to its own model), so compare within a table,
+  not across.
 
 ### Is the probe deficit domain mismatch? (No.) — in-domain control
 

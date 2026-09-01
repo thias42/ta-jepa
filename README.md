@@ -31,12 +31,17 @@ predictor, latent smooth-L1 + **VICReg** (`src/tajepa/models/jepa.py`,
   training). Scored inside the 256-frame training window the JEPA beats AR(4) at every
   horizon — latent **+3% to +10%**, codec **+0.010 to +0.036** cosine, both domains — but
   its margin over persistence (+17–45%) is an order of magnitude larger, so persistence was
-  flattering it badly. See the Correction sections of [`RESULTS.md`](RESULTS.md).
+  flattering it badly. The multi-domain (FMA+FSD50K) checkpoint lands in the same place
+  (+6.6% to +10.5% latent, +0.023 to +0.027 codec) and is the only one of the three models
+  to clear the linear floor on ESC-50 transfer — APC sits just below it. See the Correction
+  sections of [`RESULTS.md`](RESULTS.md).
 - **Absolute positional encodings do not extrapolate.** Past its 256-frame (3.41 s) training
   window the model degrades to *worse than persistence*; the same audio re-fed inside a
   256-frame window scores fine, so it is position, not content. Inference now windows
   (`windowed_predict`) and the trained window travels in the checkpoint (`context_frames`)
-  so evaluation clamps to it. Fixing it properly means RoPE/ALiBi or longer training windows.
+  so evaluation clamps to it — a stopgap that leaves a ~20% spike at each window seam.
+  **Next phase: RoPE/ALiBi** (plan, Phase 2.5), which extrapolates and removes windowing,
+  seam, and silent-failure mode together.
 - No collapse, throughout: effective rank 226–241/256.
 
 **Phase 1 gate: partly passed, on one criterion of two.** The backbone does beat trivial
