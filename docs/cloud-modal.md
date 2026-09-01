@@ -118,6 +118,15 @@ modal run --detach modal_app.py::make_interventions --dataset fma_small \
     --extra-args "--seconds 10 --p-axis 0.6"
 ```
 
+Then train and evaluate the action-conditioned model:
+
+```bash
+modal run --detach modal_app.py::train_intervention --dataset fma_small \
+    --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 --max-steps 25000"
+modal run modal_app.py::counterfactual_eval --dataset fma_small \
+    --ckpt intervention_fma_small --extra-args "--n-clips 400"
+```
+
 **Seed sweeps (error bars).** Single runs cannot separate a +3–10% margin over the AR floor
 from seed noise, so headline claims need several. `train_seeds` trains them sequentially in
 one container — the multi-domain caches are ~10 GB and one container per seed would re-pull

@@ -184,6 +184,13 @@ def pad_collate(batch: list[dict]) -> dict:
         for i, b in enumerate(batch):
             ctrl[i, : b["control"].shape[0]] = b["control"]
         collated["control"] = ctrl
+    for key in ("intervened", "action"):            # paired-intervention (Phase 2) batches
+        if key in batch[0]:
+            dk = batch[0][key].shape[1]
+            buf = torch.zeros(len(batch), t_max, dk)
+            for i, b in enumerate(batch):
+                buf[i, : b[key].shape[0]] = b[key]
+            collated[key] = buf
     return collated
 
 

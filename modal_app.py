@@ -247,23 +247,47 @@ def train(
 @app.function(image=image, secrets=[r2_secret], gpu=EXTRACT_GPU,
               ephemeral_disk=DISK_MIB, timeout=8 * 3600)
 def make_interventions(dataset: str, extra_args: str = "") -> None:
-    """Phase 2: build the paired (clean, intervened) action cache from persisted audio.
+    """Phase 2: build the paired (clean, intervened) action cache.
 
-    Needs the raw audio, not the codec cache — the intervention is applied in the waveform
-    domain and both sides are then encoded in one pass, so they are frame-aligned by
-    construction. Run ``persist_audio`` for the dataset first.
+    Needs the raw **audio**, not the codec cache — the intervention is applied in the
+    waveform domain and both sides are then encoded in one pass, so they stay frame-aligned
+    by construction. ``restore_or_prepare`` pulls persisted audio from R2 when it exists and
+    prepares from source otherwise, exactly as ``extract`` does.
     """
-    audio_dir = _download_tar(f"audio/{dataset}.tar", f"{SCRATCH}/audio")
-    manifest = f"{SCRATCH}/manifests/{dataset}.jsonl"
-    _download(f"manifests/{dataset}.jsonl", manifest)
-    out = f"{SCRATCH}/cache/interventions/{dataset}"
+    if dataset not in PREPARE:
+        raise ValueError(f"Unknown dataset '{dataset}'. Known: {sorted(PREPARE)}")
+    manifest = restore_or_prepare(dataset)
+    out = f"{SCRATCH}/data/cache/interventions/{dataset}"
     _run([
         "python", f"{REPO}/scripts/make_interventions.py",
         "--manifest", manifest, "--out", out, *shlex.split(extra_args),
     ])
     _upload_dir_tar(out, f"cache/interventions/{dataset}.tar")
-    print(f"DONE make_interventions: {dataset} -> R2 cache/interventions/{dataset}.tar "
-          f"(audio from {audio_dir})")
+    print(f"DONE make_interventions: {dataset} -> R2 cache/interventions/{dataset}.tar")
+
+
+@app.function(image=image, secrets=[r2_secret], gpu=TRAIN_GPU,
+              ephemeral_disk=DISK_MIB, timeout=8 * 3600)
+def train_intervention(dataset: str, save_name: str = "", extra_args: str = "") -> None:
+    """Phase 2: train the action-conditioned JEPA on a paired intervention cache."""
+    save_name = save_name or f"intervention_{dataset}"
+    cache = _download_tar(f"cache/interventions/{dataset}.tar", f"{SCRATCH}/cache/interventions")
+    ckpt = f"{SCRATCH}/runs/{save_name}.ckpt"
+    _run(["python", f"{REPO}/scripts/train_intervention.py", "--cache", cache,
+          "--accelerator", "gpu", "--save", ckpt, *shlex.split(extra_args)])
+    _upload(ckpt, f"runs/{save_name}.ckpt")
+    print(f"DONE train_intervention: {save_name} -> R2 runs/{save_name}.ckpt")
+
+
+@app.function(image=image, secrets=[r2_secret], gpu=EVAL_GPU,
+              ephemeral_disk=DISK_MIB, timeout=2 * 3600)
+def counterfactual_eval(dataset: str, ckpt: str, extra_args: str = "") -> None:
+    """Phase 2: does the model actually use the applied action? (see run_counterfactual.py)"""
+    cache = _download_tar(f"cache/interventions/{dataset}.tar", f"{SCRATCH}/cache/interventions")
+    local = f"{SCRATCH}/runs/{ckpt}.ckpt"
+    _download(f"runs/{ckpt}.ckpt", local)
+    _run(["python", f"{REPO}/scripts/run_counterfactual.py", "--ckpt", local,
+          "--cache", cache, *shlex.split(extra_args)])
 
 @app.function(image=image, secrets=[r2_secret], gpu=TRAIN_GPU,
               ephemeral_disk=DISK_MIB, timeout=20 * 3600)

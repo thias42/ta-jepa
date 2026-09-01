@@ -202,6 +202,19 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   so firing it on rain or wind would command an action with no observable consequence — how
   the onset dial died. Output is a paired `.npz` cache (clean / intervened / action) read by
   `InterventionPairDataset`; both sides are encoded in one pass, so they are frame-aligned.
+- `scripts/train_intervention.py` + `src/tajepa/models/action_conditioning.py` — the
+  action-conditioned model. `ControllableJEPA` with the action in place of the descriptor
+  delta; conditioning at offset `o` is the action summed over `[t, t+o)` (standard
+  convention: `a_t` takes the world from `t` to `t+1`). The encoder does **not** see the
+  action — an action is not an observation, and feeding it in would re-create the
+  circularity the redesign exists to remove. Prediction loss is logged separately on event
+  vs action-free frames, because the aggregate is dominated by the latter and would hide
+  whether the action is used at all.
+- `src/tajepa/eval/intervention.py` + `scripts/run_counterfactual.py` — **the eval paired
+  data buys**: predict the future twice from one context, with and without the applied
+  action, both scored against the true intervened future.
+  `action_gain = 1 - err(with)/err(without)`; ~0 is a dead dial. Content difficulty cancels.
+  Per-axis figures use only single-axis clips so no axis borrows credit from another.
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.

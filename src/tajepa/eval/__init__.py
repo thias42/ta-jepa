@@ -19,6 +19,7 @@ from .forecasting import (
     HorizonMetrics,
 )
 from .controllability import controllability_matrix, disentanglement_report
+from .intervention import counterfactual_report
 from .action_controllability import (
     action_effect_matrix,
     residual_action_effect_matrix,
@@ -41,6 +42,7 @@ __all__ = [
     "fit_latent_ar",
     "HorizonMetrics",
     "controllability_matrix",
+    "counterfactual_report",
     "disentanglement_report",
     "action_effect_matrix",
     "residual_action_effect_matrix",
