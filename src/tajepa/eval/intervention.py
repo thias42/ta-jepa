@@ -51,6 +51,7 @@ def counterfactual_report(
     device: str | None = None,
     axis_names: tuple[str, ...] = ("gain_db", "tilt_oct", "rt60_s"),
     horizon_pad: int = 4,
+    lead_frames: int = 0,
 ) -> dict:
     """Returns overall and per-axis ``action_gain`` plus the raw errors behind it.
 
@@ -73,13 +74,14 @@ def counterfactual_report(
         if not fired.any():
             continue
         span = torch.nonzero(a.abs().sum(-1)[0]).flatten()
-        lo, hi = int(span[0]), int(span[-1])
+        # the scored region follows the ACOUSTIC change, which trails the command by the lead
+        lo, hi = int(span[0]) + lead_frames, int(span[-1]) + lead_frames
         # observability: how transient the CLEAN audio is (the pre-flight's split variable)
         clean = item.get("features", item["intervened"])
         flux = float(clean.diff(dim=0).abs().mean())
         z_tgt = target_encoder(x)
 
-        w_real = action_windows(a, offsets)
+        w_real = action_windows(a, offsets, lead_frames=lead_frames)
         w_null = {o: torch.zeros_like(v) for o, v in w_real.items()}
         _, p_real = model.predict_with_deltas(x, w_real)
         _, p_null = model.predict_with_deltas(x, w_null)

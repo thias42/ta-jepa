@@ -912,6 +912,50 @@ brightness, harmonicity** — plus a weak pitch dial, and transients as the docu
 render-limited frontier (needs a nonlinear latent→codec decoder). Spectral/timbral axes are
 controllable; temporal (transient) ones are gated by the linear render head.
 
+## Phase 2 (rebuilt) — first intervention run: the action is redundant with the observation
+
+`intervention_fma` (ControllableJEPA conditioned on applied gain / tilt / reverb, 4000 FMA
+pairs, 25k steps, effective rank 239/256). Counterfactual on 376 clips — predict the future
+with the applied action and without it, both against the true intervened future:
+
+| | k=1 | k=2 | k=4 | k=8 |
+|---|---|---|---|---|
+| **action_gain** (overall) | +0.1% | +0.2% | +0.2% | +0.4% |
+| gain_db (n=32) | +0.2% | +0.2% | +0.4% | +0.6% |
+| tilt_oct (n=49) | +0.0% | +0.0% | +0.1% | +0.1% |
+| rt60_s (n=39) | **+0.0%** | **+0.0%** | **+0.0%** | **+0.0%** |
+
+`err_without` (0.5281) is indistinguishable from `err_with` (0.5276). **The model ignores the
+action** — the Phase 2a dead-dial outcome, reproduced despite the redesign.
+
+**It is not a bug, and not a training failure.** Checked first: the effect begins at codec
+frame 226 while the action marks 225, so the `a_t → z_{t+1}` convention and the `[t, t+o)`
+window are correctly aligned. The cause is structural.
+
+**The intervention is applied as a gradual crossfade — median ramp 8.8 frames — and the audio
+changes over the same frames the action does.** So a causal model at any frame inside the ramp
+has *already observed the ramp beginning* in `x≤t` and can extrapolate the rest. Only the
+ramp's first frame is genuinely unforecastable without the action: **1 frame in 256, 0.4% of
+the window** at offset 1. An action that arrives simultaneously with its consequence carries
+almost no information.
+
+Two details corroborate it. `action_gain` rises with horizon (+0.1% → +0.4% from k=1 to k=8)
+as the action window covers more positions (3% → 6%); and gain — the axis with the largest
+per-frame effect — is the only one that moves at all.
+
+**This is the same error as scoring against persistence, in a different place.** There, the
+baseline already contained the answer. Here, the observation already contains the action. In
+both cases the comparison looked meaningful and measured nothing.
+
+**Fix (implemented): the action must lead its effect.** That is also the honest robotics
+analogue — a robot issues a motion command and the acoustic consequence follows after a delay;
+it does not learn of its own action by hearing it. The intervention now takes effect
+`lead` frames after the action is commanded, and the conditioning window is shifted by the
+same amount (`action_windows(..., lead_frames=L)` reads `[t−L, t+o−L)`), so at the commanded
+moment nothing is yet observable and conditioning is the only route to anticipation. A naive
+lead *without* the matching window shift would have made things worse, not better — the action
+would pass out of the window before the frame it explains.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.

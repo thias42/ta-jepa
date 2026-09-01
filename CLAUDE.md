@@ -203,6 +203,11 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   so firing it on rain or wind would command an action with no observable consequence — how
   the onset dial died. Output is a paired `.npz` cache (clean / intervened / action) read by
   `InterventionPairDataset`; both sides are encoded in one pass, so they are frame-aligned.
+  **The action leads its effect** (`--action-lead`, default 0.12 s ≈ 9 frames): with a
+  simultaneous action a causal model has already observed the transition beginning and
+  ignores the conditioning — the first trained model scored `action_gain` ≈ 0. Training and
+  eval must use the matching `--action-lead-frames`, which is stored on the checkpoint;
+  a lead in the data *without* the shifted conditioning window is worse than none.
 - `scripts/train_intervention.py` + `src/tajepa/models/action_conditioning.py` — the
   action-conditioned model. `ControllableJEPA` with the action in place of the descriptor
   delta; conditioning at offset `o` is the action summed over `[t, t+o)` (standard

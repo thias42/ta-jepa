@@ -51,7 +51,8 @@ class InterventionLightning(pl.LightningModule):
     def __init__(self, in_dim=128, cond_dim=3, dim=256, enc_depth=6, pred_depth=3, heads=4,
                  offsets=(1, 2, 4, 8), dropout=0.0, lr=2e-4, weight_decay=0.05,
                  var_coef=1.0, cov_coef=0.04, grounding_coef=1.0,
-                 base_momentum=0.996, max_steps=25000):
+                 base_momentum=0.996, max_steps=25000,
+                 action_lead_frames=9, event_weight=1.0):
         super().__init__()
         self.save_hyperparameters()
         self.model = ControllableJEPA(in_dim, dim, enc_depth, pred_depth, heads,
@@ -63,6 +64,9 @@ class InterventionLightning(pl.LightningModule):
         # Action scale, filled from the data before fit: raw units (dB, octaves, seconds)
         # differ by orders of magnitude, so an unscaled FiLM would be driven by gain alone.
         self.register_buffer("action_std", torch.ones(cond_dim))
+        # The lead must travel with the weights: a model trained with one lead and scored
+        # with another is conditioned on the wrong frames, silently.
+        self.register_buffer("action_lead", torch.tensor(int(action_lead_frames)))
 
     def on_load_checkpoint(self, checkpoint) -> None:
         backfill_codec_stats(checkpoint["state_dict"], "model.", self.hparams.in_dim)
@@ -79,7 +83,7 @@ class InterventionLightning(pl.LightningModule):
     def training_step(self, batch, _):
         x, pad = batch["intervened"], batch["pad_mask"]      # the stream actually observed
         act = batch["action"] / self.action_std
-        deltas = action_windows(act, self.offsets)
+        deltas = action_windows(act, self.offsets, lead_frames=int(self.action_lead))
 
         z = self.model.encoder(x, pad)
         preds = self.model.predictor(z, deltas, pad)
@@ -95,10 +99,18 @@ class InterventionLightning(pl.LightningModule):
             p, tgt = preds[o][:, :-o], z_tgt[:, o:]
             valid = (~pad[:, o:]).unsqueeze(-1)
             err = torch.nn.functional.smooth_l1_loss(p, tgt, reduction="none") * valid
-            pred_loss = pred_loss + err.sum() / (valid.sum().clamp(min=1) * p.shape[-1])
+            ev_mask = (deltas[o][:, :-o].abs().sum(-1, keepdim=True) > 0) & valid
+            if self.hparams.event_weight != 1.0:
+                # a zero-init FiLM otherwise gets gradient from ~3% of frames; upweight the
+                # frames where the action is the only source of the answer
+                w = 1.0 + (self.hparams.event_weight - 1.0) * ev_mask.float()
+                pred_loss = pred_loss + (err * w).sum() / (
+                    (valid.float() * w).sum().clamp(min=1) * p.shape[-1])
+            else:
+                pred_loss = pred_loss + err.sum() / (valid.sum().clamp(min=1) * p.shape[-1])
             n += 1
             with torch.no_grad():   # split by whether an action spans this window
-                ev = (deltas[o][:, :-o].abs().sum(-1, keepdim=True) > 0) & valid
+                ev = ev_mask
                 ev_num += float((err * ev).sum()); ev_den += float(ev.sum() * p.shape[-1])
                 qu = valid & ~ev
                 qu_num += float((err * qu).sum()); qu_den += float(qu.sum() * p.shape[-1])
@@ -141,6 +153,14 @@ def main() -> None:
     ap.add_argument("--offsets", type=int, nargs="+", default=[1, 2, 4, 8])
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--grounding-coef", type=float, default=1.0)
+    ap.add_argument("--action-lead-frames", type=int, default=9,
+                    help="Must match the cache's --action-lead. The conditioning window is "
+                         "shifted back by this much; a lead in the data without the matching "
+                         "shift is worse than no lead, since the action passes out of the "
+                         "window before the frame it explains.")
+    ap.add_argument("--event-weight", type=float, default=1.0,
+                    help="Loss weight on frames whose prediction window contains an action "
+                         "(>1 concentrates gradient where the action is informative).")
     ap.add_argument("--window", type=int, default=256)
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--max-steps", type=int, default=25000)
@@ -161,7 +181,8 @@ def main() -> None:
     model = InterventionLightning(
         in_dim=in_dim, cond_dim=cond_dim, dim=args.dim, enc_depth=args.enc_depth,
         pred_depth=args.pred_depth, heads=args.heads, offsets=tuple(args.offsets),
-        lr=args.lr, grounding_coef=args.grounding_coef, max_steps=args.max_steps)
+        lr=args.lr, grounding_coef=args.grounding_coef, max_steps=args.max_steps,
+        action_lead_frames=args.action_lead_frames, event_weight=args.event_weight)
 
     # Codec statistics for the grounding head's output space (see data/stats.py), and the
     # per-axis action scale — raw units differ by orders of magnitude (dB vs octaves vs
@@ -173,6 +194,8 @@ def main() -> None:
     acts = torch.cat([s["action"] for s in sample], 0)
     scale = acts.abs().sum(0) / (acts.abs() > 0).sum(0).clamp(min=1)
     model.action_std.copy_(scale.clamp_min(1e-3))
+    print(f"Action lead: {args.action_lead_frames} frames "
+          f"(must match the cache); event weight {args.event_weight}")
     print(f"Action scale (mean |delta| per axis): "
           f"{ {n: round(float(v), 3) for n, v in zip(AXES, model.action_std)} }")
 

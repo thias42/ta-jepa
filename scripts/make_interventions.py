@@ -49,6 +49,12 @@ def main() -> None:
                     help="Per-axis firing probability. Axes are drawn independently so the "
                          "set contains combinations — a model cannot pass by learning three "
                          "disjoint detectors.")
+    ap.add_argument("--action-lead", type=float, default=0.12,
+                    help="Seconds between commanding an action and its first acoustic "
+                         "effect. With 0 the action arrives simultaneously with its "
+                         "consequence and carries almost no information — the first trained "
+                         "model ignored it entirely. Training and eval must use the matching "
+                         "--action-lead-frames.")
     ap.add_argument("--reverb-min-transient", type=float, default=0.05,
                     help="Skip the reverb axis on clips flatter than this. A room is heard "
                          "through its response to transients; on stationary texture a reverb "
@@ -81,7 +87,8 @@ def main() -> None:
                     raise ValueError(f"clip shorter than 1s ({wav.size} samples)")
                 spec = sample_spec(rng, wav.size / sr, p_axis=args.p_axis,
                                    transient=transient_score(wav, sr),
-                                   reverb_min_transient=args.reverb_min_transient)
+                                   reverb_min_transient=args.reverb_min_transient,
+                                   lead_s=args.action_lead)
                 inter = apply_intervention(wav, sr, spec, rng)
 
                 with torch.no_grad():
@@ -89,7 +96,9 @@ def main() -> None:
                     emb = codec.encode(stack).cpu().numpy()   # [2, T, D]
                 act = action_frames(spec, emb.shape[1], fps)
 
-                np.savez_compressed(args.out / f"{e.clip_id}.npz",
+                # uncompressed on purpose: float32 barely compresses (19% saved) but
+                # decompression cost 6x the load time, which serialised against the GPU
+                np.savez(args.out / f"{e.clip_id}.npz",
                                     clean=emb[0].astype(np.float32),
                                     intervened=emb[1].astype(np.float32),
                                     action=act)
@@ -107,6 +116,9 @@ def main() -> None:
 
     print(f"\nWrote {n_ok} pairs to {args.out} ({n_fail} skipped)")
     print(f"Each .npz: clean [T,D], intervened [T,D], action [T,{len(AXES)}] over {AXES}")
+    print(f"Action lead: {args.action_lead:.3f}s "
+          f"(~{round(args.action_lead * fps)} frames) — train and eval with "
+          f"--action-lead-frames {round(args.action_lead * fps)}")
 
 
 if __name__ == "__main__":

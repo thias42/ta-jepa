@@ -115,14 +115,21 @@ persisted audio rather than the codec cache:
 ```bash
 modal run modal_app.py::persist_audio --dataset fma_small        # one-time, if not already
 modal run --detach modal_app.py::make_interventions --dataset fma_small \
-    --extra-args "--seconds 10 --p-axis 0.6"
+    --extra-args "--seconds 10 --p-axis 0.6 --action-lead 0.12"
 ```
+
+`--action-lead` is the delay between commanding an action and its first acoustic effect. With
+0 the action arrives simultaneously with its consequence, a causal model has already observed
+the transition beginning, and it ignores the conditioning entirely — which is what the first
+trained model did. **Training and eval must use the matching `--action-lead-frames`**; the
+value is stored on the checkpoint so `counterfactual_eval` picks it up automatically.
 
 Then train and evaluate the action-conditioned model:
 
 ```bash
 modal run --detach modal_app.py::train_intervention --dataset fma_small \
-    --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 --max-steps 25000"
+    --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 --max-steps 25000 \
+    --action-lead-frames 9 --event-weight 4"
 modal run modal_app.py::counterfactual_eval --dataset fma_small \
     --ckpt intervention_fma_small --extra-args "--n-clips 400"
 ```

@@ -146,3 +146,42 @@ def test_stratification_needs_enough_clips_to_be_meaningful():
                                 device="cpu", axis_names=("rt60_s",))
     assert rep["per_axis"]["rt60_s"][1]["n"] == 4
     assert rep["per_axis_by_observability"] == {}
+
+
+def test_lead_shifts_the_window_to_where_the_action_lives():
+    """With a lead, the effect of a_f lands at f+L+1, so the actions determining z_{t+o} are
+    at t-L .. t+o-L-1. Shifting the data without shifting the window is worse than no lead:
+    the model is handed zeros exactly at the frame the action explains."""
+    L, t_len = 9, 60
+    a = torch.zeros(1, t_len, 1)
+    a[0, 20, 0] = 3.0                 # commanded at 20; audio first changes at 20+L+1 = 30
+    first_changed = 20 + L + 1
+
+    for o in (1, 2, 4):
+        t_pred = first_changed - o     # earliest t whose prediction covers the change
+        naive = action_windows(a, (o,))[o][0, t_pred].abs().sum()
+        shifted = action_windows(a, (o,), lead_frames=L)[o][0, t_pred].abs().sum()
+        assert naive == 0.0, f"unshifted window sees nothing at o={o} — that is the bug"
+        assert shifted == 3.0, f"shifted window must carry the action at o={o}"
+
+
+def test_zero_lead_is_the_plain_window():
+    a = torch.randn(2, 30, 3)
+    for o in (1, 4):
+        assert torch.allclose(action_windows(a, (o,))[o],
+                              action_windows(a, (o,), lead_frames=0)[o])
+
+
+def test_lead_makes_the_effect_unobservable_at_command_time():
+    """The whole point: at the commanded frame nothing about the change is yet in the audio."""
+    import numpy as np
+
+    from tajepa.interventions import InterventionSpec, action_frames
+
+    fps = 75.0
+    for lead_s, expected_gap in ((0.0, 1), (0.12, 10)):
+        spec = InterventionSpec(event_s=3.0, ramp_s=0.08, lead_s=lead_s, gain_db=-18.0)
+        act = action_frames(spec, 400, fps)
+        cmd = int(np.nonzero(act.sum(-1))[0][0])
+        onset = int((spec.event_s + spec.lead_s) * fps) + 1   # first frame the audio moves
+        assert onset - cmd == expected_gap, (lead_s, onset - cmd)

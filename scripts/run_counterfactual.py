@@ -37,10 +37,12 @@ def main() -> None:
 
     lit = InterventionLightning.load_from_checkpoint(str(args.ckpt), map_location="cpu")
     ds = InterventionPairDataset(args.cache, window_frames=args.window, random_crop=False)
+    lead = int(getattr(lit, "action_lead", 0))
     rep = counterfactual_report(lit.model, lit.target, ds, n_clips=args.n_clips,
-                                device=args.device, axis_names=AXES)
+                                device=args.device, axis_names=AXES, lead_frames=lead)
 
-    print(f"Counterfactual on {args.cache.name} ({len(ds)} pairs)")
+    print(f"Counterfactual on {args.cache.name} ({len(ds)} pairs), "
+          f"action lead {lead} frames (read from the checkpoint)")
     print("predict WITH the applied action vs WITHOUT; both scored against the true "
           "intervened future.\n")
     print(f"{'':<12}{'n':>6}{'err w/ action':>15}{'err w/o':>11}{'action_gain':>13}")

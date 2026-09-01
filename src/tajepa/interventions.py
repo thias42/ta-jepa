@@ -29,6 +29,19 @@ The action handed to the model is the **per-frame delta of the commanded paramet
 away from the transition, non-zero across it. That mirrors a robot's per-timestep command
 (a joint velocity, not a joint position), and it keeps the semantics "an action occurred"
 rather than "the observation currently looks like this".
+
+3. **The action leads its effect** (``lead_s``). The first trained model ignored the action
+   entirely, because a gradual crossfade changes the audio over the *same* frames the action
+   does: a causal model has already observed the ramp beginning and can extrapolate the rest,
+   leaving only the ramp's first frame genuinely unforecastable — 0.4% of a training window.
+   An action that arrives simultaneously with its consequence carries almost no information.
+   So the acoustic change now begins ``lead_s`` **after** the action is commanded, which is
+   also the honest robotics analogue: a robot issues a motion command and the acoustic
+   consequence follows; it does not learn of its own action by hearing it. The predictor's
+   conditioning window must be shifted by the same amount — see
+   ``models.action_conditioning.action_windows(..., lead_frames=...)``. A lead *without* that
+   shift is worse than none, since the action passes out of the window before the frame it
+   explains.
 """
 
 from __future__ import annotations
@@ -54,6 +67,7 @@ class InterventionSpec:
 
     event_s: float
     ramp_s: float = 0.08
+    lead_s: float = 0.0           # delay from the command to the first acoustic change
     gain_db: float = 0.0          # post-event level change (the only level-changing axis)
     cutoff_hz_before: float = 0.0  # 0 = no lowpass
     cutoff_hz_after: float = 0.0
@@ -147,7 +161,10 @@ def apply_intervention(
     before = render(spec.cutoff_hz_before, spec.rt60_before, 1)
     after = render(spec.cutoff_hz_after, spec.rt60_after, 2)
     after = after * float(10.0 ** (spec.gain_db / 20.0))     # the one deliberate level change
-    return _crossfade(before, after, int(spec.event_s * sr), max(1, int(spec.ramp_s * sr)))
+    # the acoustic change starts `lead_s` after the command, so nothing about it is
+    # observable at the moment the action is issued
+    onset = int((spec.event_s + spec.lead_s) * sr)
+    return _crossfade(before, after, onset, max(1, int(spec.ramp_s * sr)))
 
 
 def action_frames(spec: InterventionSpec, n_frames: int, frame_rate: float) -> np.ndarray:
@@ -182,6 +199,7 @@ def sample_spec(
     rng: np.random.Generator, duration_s: float, *,
     p_axis: float = 0.6, edge_s: float = 0.5,
     transient: float | None = None, reverb_min_transient: float = 0.05,
+    lead_s: float = 0.0,
 ) -> InterventionSpec:
     """Draw a random intervention. Each axis fires independently with prob ``p_axis``.
 
@@ -197,9 +215,10 @@ def sample_spec(
     how the Phase 2a onset dial died — so when ``transient`` is supplied and falls below
     ``reverb_min_transient``, the reverb axis simply does not fire.
     """
-    lo, hi = edge_s, max(edge_s + 0.1, duration_s - edge_s)
+    lo, hi = edge_s, max(edge_s + 0.1, duration_s - edge_s - lead_s)
     spec: dict = {"event_s": float(rng.uniform(lo, hi)),
-                  "ramp_s": float(rng.uniform(0.04, 0.20))}
+                  "ramp_s": float(rng.uniform(0.04, 0.20)),
+                  "lead_s": float(lead_s)}
     if rng.random() < p_axis:                                  # microphone covered / distance
         spec["gain_db"] = float(rng.uniform(-18.0, 6.0))
     if rng.random() < p_axis:                                  # occluded -> muffled

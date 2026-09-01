@@ -241,6 +241,34 @@ not fire it on flat content. Verified: 0/60 firings on stationary noise, 37/60 o
 *Caveat:* n=220 with a 384-feature probe is under-powered; the ordering is trustworthy, the
 absolute values are not. Re-measure on the full training set.
 
+#### First run: the action must LEAD its effect (2026-09-01)
+
+The first trained intervention model **ignored the action**: `action_gain` +0.1–0.4% overall
+and 0.0% on tilt and reverb, with `err_without` indistinguishable from `err_with`. The
+dead-dial outcome, reproduced despite the redesign.
+
+Not a bug — alignment was checked first and is correct (the effect begins at codec frame 226
+while the action marks 225). The cause is structural: the intervention is a **gradual
+crossfade (median 8.8 frames) whose audio changes over the same frames as the action**, so a
+causal model has already observed the ramp beginning and can extrapolate. Only the ramp's
+first frame is unforecastable without the action — 0.4% of a 256-frame window.
+
+This is the persistence mistake in another place. There the baseline already contained the
+answer; here the observation already contains the action. Both comparisons looked meaningful
+and measured nothing.
+
+**So the design gains one more rule, alongside the timed-event and level-normalisation ones:
+the action is commanded `lead` frames before its acoustic effect begins, and the conditioning
+window is shifted to match** (`[t−L, t+o−L)`). At the commanded moment nothing is observable,
+so conditioning is the only route to anticipation. This is also the honest robotics analogue —
+a robot issues a motion command and the acoustic consequence follows; it does not learn of its
+own action by hearing it. Note a naive lead *without* the matching window shift makes matters
+worse: the action passes out of the conditioning window before the frame it explains.
+
+Secondary levers, both cheap and now available: weighting the loss on event frames, so a
+zero-init FiLM receives gradient in proportion to the information rather than 3% of it; and
+longer horizons, which couples this to Phase 2.5.
+
 #### Risk: learning to detect the DSP
 
 The failure mode is that the model learns to recognise the applied processing rather than
