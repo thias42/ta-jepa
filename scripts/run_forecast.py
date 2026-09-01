@@ -75,11 +75,16 @@ def main() -> None:
     if args.ar_order > 0:
         offsets = sorted(set(jepa.offsets if jepa else ()) | set(apc.offsets if apc else ()))
         fit_src = args.train_cache or [args.cache]
-        ar_ds = EmbeddingSequenceDataset(fit_src, window_frames=512, random_crop=False)
+        # Fit inside the model's trained context: latents past it are extrapolation, and
+        # fitting the reference on them measures the model's failure, not the audio.
+        ctx = getattr(jepa, "trained_context", None) if jepa is not None else None
+        ar_frames = ctx or 512
+        ar_ds = EmbeddingSequenceDataset(fit_src, window_frames=ar_frames, random_crop=False)
         ar = fit_linear_ar(ar_ds, dim=ds[0]["features"].shape[-1], offsets=offsets,
-                           order=args.ar_order, max_clips=args.ar_clips)
+                           order=args.ar_order, max_clips=args.ar_clips, max_frames=ar_frames)
         print(f"Fitted AR({args.ar_order}) on {min(args.ar_clips, len(ar_ds))} clips "
-              f"from {', '.join(str(d) for d in fit_src)}")
+              f"x {ar_frames} frames from {', '.join(str(d) for d in fit_src)}"
+              + (f"  (model context = {ctx})" if ctx else "  (model records no context)"))
 
     curves = codec_forecast_curves(ds, device=args.device, jepa=jepa, apc=apc, ar=ar,
                                    max_clips=args.max_clips, stats=stats)
@@ -109,7 +114,7 @@ def main() -> None:
         if ar is not None:
             lat_ar = fit_latent_ar(jepa_lit.target, ar_ds, offsets=jepa.offsets,
                                    order=args.ar_order, max_clips=min(200, args.ar_clips),
-                                   device=args.device)
+                                   max_frames=ar_frames, device=args.device)
         rep = forecast_report(jepa, jepa_lit.target, ds, device=args.device,
                               max_clips=args.max_clips, stats=stats,
                               codec_ar=ar, latent_ar=lat_ar)

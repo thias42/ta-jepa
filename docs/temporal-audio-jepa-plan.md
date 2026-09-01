@@ -17,8 +17,11 @@ This document is the original design rationale; the body below is preserved as w
   transformer already measures 0.58 autocorr, so the smoothness is mostly architectural
   rather than earned by the objective; and X-ARES itself was never run, only a homemade
   ESC-50 probe. The substituted gate — "beats persistence on forecasting" — is cleared by a
-  closed-form **linear AR(4)**, against which the causal predictor is *behind* in its own
-  latent space at every horizon (−11% to −20%) and behind in codec space in-domain. The
+  closed-form **linear AR(4)**. Scored *inside* the 256-frame training window the predictor
+  beats AR(4) at every horizon (latent +3% to +10%, codec +0.010 to +0.036) — but only by an
+  order of magnitude less than its +17–45% over persistence. Scored beyond that window it
+  collapses below persistence, because the absolute sinusoidal positional encodings were
+  never learned there; that is a real limitation and a separate one. The
   forecasting eval also scored the grounding head in a space it never emitted into, which
   manufactured the "music-trained decoder doesn't transfer" finding (sign flips once fixed)
   — which is what the multi-domain campaign was launched to close. Re-run through the fixed

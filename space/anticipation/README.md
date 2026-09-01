@@ -31,15 +31,26 @@ beats it comfortably — typically +13% to +29% on the bundled clips. That numbe
 model. Codec embeddings are temporally smooth, so persistence is a very easy bar.
 
 **Linear AR(4)** is the honest one: a closed-form least-squares fit on the last four latents,
-with no training at all. Against it the model is currently **behind on every bundled clip**
-(−5% to −20%), and the same holds across ESC-50 and FMA at every horizon tested. So the
-demo shows a real, working causal predictor — but not yet one that has learned dynamics a
-trivial linear extrapolator hasn't. That gap is the open problem, and the demo reports it
-rather than hiding it behind the easier baseline.
+with no training at all. The model beats it on every bundled clip, but only by **+1% to +16%**
+— roughly a tenth of its apparent margin over persistence. That ratio is the point: a model
+can look transformative against persistence and merely decent against a baseline that costs
+nothing to fit.
 
 The AR reference ships pre-fitted (`assets/ar_latent_fma.pt`), fitted on the checkpoint's own
-training data (FMA), so the number is reproducible and doesn't depend on which clips are
-bundled.
+training data (FMA) inside its training window, so the number is reproducible and doesn't
+depend on which clips are bundled.
+
+## The 3.41-second context window
+
+The model was trained on 256-frame sequences (3.41 s at 75 Hz) and uses *absolute* positional
+encodings, so it is only valid below that length. Run a longer clip in one pass and the
+prediction degrades to **worse than persistence** the moment it crosses 3.41 s — not because
+the audio gets harder, but because those positions were never learned. The same frames re-fed
+inside a 256-frame window score normally.
+
+The demo therefore runs long audio through overlapping ≤256-frame windows, so every frame you
+see has both an in-range position and real history behind it. Lifting the limit properly would
+mean a positional scheme that extrapolates (RoPE/ALiBi) or training on longer windows.
 
 ## Examples
 

@@ -97,7 +97,8 @@ def _mel_db(y: np.ndarray, sr: int, hop: int) -> np.ndarray:
 def build_anticipation_demo(jepa, target, codec, *, max_seconds: float = 12.0,
                             examples: str | Path | None = None,
                             ar_state: str | Path | None = None,
-                            ar_corpus: str | Path | None = None, ar_order: int = 4):
+                            ar_corpus: str | Path | None = None, ar_order: int = 4,
+                            context_frames: int | None = None):
     """Build (but don't launch) the anticipation Gradio ``Blocks``.
 
     ``jepa`` / ``target`` should already be in eval mode; all three of ``jepa`` / ``target``
@@ -115,6 +116,13 @@ The linear-AR reference comes from one of two places, in order of preference:
 
     With neither, the AR curve is omitted and only the weak persistence skill is reported,
     clearly labelled as such.
+
+    ``context_frames`` is the sequence length the checkpoint was trained on; it defaults to
+    the value recorded on the model, else 256. Audio longer than that is run through
+    overlapping windows (``windowed_predict``) rather than in one pass. Without this the
+    demo silently plots *positional extrapolation* past the training length: absolute
+    sinusoidal encodings are defined at every index but were never learned there, and the
+    prediction degrades to worse than persistence — on a 256-frame model, at exactly 3.41 s.
     """
     import gradio as gr
     import matplotlib
@@ -123,8 +131,17 @@ The linear-AR reference comes from one of two places, in order of preference:
     from scipy.signal import find_peaks
 
     from ..data.io import load_resampled
+    from ..models.jepa import windowed_predict
 
     device = next(jepa.parameters()).device
+    ctx = context_frames or getattr(jepa, "trained_context", None) or 256
+    if context_frames is None and getattr(jepa, "trained_context", None) is None:
+        print(f"[ta-jepa] context window: {ctx} frames (assumed — the checkpoint records "
+              f"none). Audio beyond {ctx / codec.frame_rate:.2f}s is run in overlapping "
+              f"windows; set context_frames if the model was trained differently.")
+    else:
+        print(f"[ta-jepa] context window: {ctx} frames "
+              f"({ctx / codec.frame_rate:.2f}s); longer audio runs in overlapping windows")
     offsets = tuple(jepa.offsets)
     sr = int(codec.sample_rate)
     hop = max(1, round(sr / codec.frame_rate))       # samples per codec frame (≈320 @ 24k/75)
@@ -154,7 +171,9 @@ The linear-AR reference comes from one of two places, in order of preference:
         seqs = []
         for c in clips:
             wav = load_resampled(str(c), sr, mono=True)[:, : int(max_seconds * sr)]
-            seqs.append(target(codec.encode(wav.unsqueeze(0).to(device)).to(device)).cpu())
+            # truncate to the context: latents past it are extrapolation, and fitting the
+            # reference on them would measure the model's failure rather than the audio
+            seqs.append(target(codec.encode(wav.unsqueeze(0).to(device)).to(device)[:, :ctx]).cpu())
         dim = seqs[0].shape[-1]
         ar = LinearAR(dim, order=ar_order, offsets=offsets).fit(seqs)
         print(f"[ta-jepa] AR reference: linear AR({ar_order}) fitted on {len(clips)} clips "
@@ -174,8 +193,9 @@ The linear-AR reference comes from one of two places, in order of preference:
             wav = wav[:, : int(max_seconds * sr)]
         y = wav.squeeze(0).cpu().numpy()
         x = codec.encode(wav.unsqueeze(0).to(device)).to(device)   # [1, T, D] raw
-        _, preds = jepa(x)                                   # offset -> [1, T, dim]
-        z_tgt = target(x)                                    # [1, T, dim] EMA targets
+        # Windowed, not one pass: past the trained context the positional encodings are
+        # unlearned and the forecast collapses below persistence (see windowed_predict).
+        preds, z_tgt = windowed_predict(jepa, target, x, context=ctx, stride=max(1, ctx // 2))
         mel = _mel_db(y, sr, hop)
         out = (y, preds, z_tgt, mel, x.shape[1])
         _cache[key] = out

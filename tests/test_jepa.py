@@ -101,3 +101,73 @@ def test_training_step_does_not_collapse():
     with torch.no_grad():
         std = model.encoder(x).std(dim=(0, 1)).mean().item()
     assert std > 0.3            # not collapsed to a constant
+
+
+def test_context_window_is_recorded_and_survives_a_checkpoint():
+    m = JEPA(in_dim=8, dim=16, enc_depth=1, pred_depth=1, heads=2, offsets=(1,))
+    assert m.trained_context is None            # unknown until training records it
+    m.set_context_frames(256)
+    assert m.trained_context == 256
+    m2 = JEPA(in_dim=8, dim=16, enc_depth=1, pred_depth=1, heads=2, offsets=(1,))
+    m2.load_state_dict(m.state_dict())
+    assert m2.trained_context == 256
+
+
+def test_windowed_predict_covers_every_frame_with_in_range_positions():
+    """Long inputs must never be run in one pass: absolute positional encodings are
+    defined past the trained length but were never learned there, so a single pass
+    silently measures extrapolation."""
+    import copy
+
+    from tajepa.models.jepa import windowed_predict
+
+    torch.manual_seed(0)
+    m = JEPA(in_dim=8, dim=16, enc_depth=1, pred_depth=1, heads=2, offsets=(1, 2)).eval()
+    tgt = copy.deepcopy(m.encoder).eval()
+    for t in (40, 64, 65, 200, 375):
+        preds, z = windowed_predict(m, tgt, torch.randn(1, t, 8), context=64, stride=32)
+        assert z.shape == (1, t, 16)
+        assert torch.isfinite(z).all() and (z.abs().sum(-1) > 0).all(), f"gap at T={t}"
+        for o in (1, 2):
+            assert preds[o].shape == (1, t, 16)
+            assert torch.isfinite(preds[o]).all()
+
+
+def test_windowed_predict_matches_a_single_pass_when_it_fits():
+    import copy
+
+    from tajepa.models.jepa import windowed_predict
+
+    torch.manual_seed(0)
+    m = JEPA(in_dim=8, dim=16, enc_depth=1, pred_depth=1, heads=2, offsets=(1,)).eval()
+    tgt = copy.deepcopy(m.encoder).eval()
+    x = torch.randn(1, 50, 8)
+    preds, z = windowed_predict(m, tgt, x, context=64, stride=32)
+    with torch.no_grad():
+        _, direct = m(x)
+    assert torch.allclose(preds[1], direct[1], atol=1e-5)
+    assert torch.allclose(z, tgt(x), atol=1e-5)
+
+
+def test_windowed_frames_use_only_in_range_positions():
+    """The whole point: no frame is ever produced at a position >= context."""
+    import copy
+
+    from tajepa.models.jepa import windowed_predict
+
+    seen = []
+    real = JEPA.forward
+
+    def spy(self, x, pad_mask=None):
+        seen.append(x.shape[1])
+        return real(self, x, pad_mask)
+
+    torch.manual_seed(0)
+    m = JEPA(in_dim=8, dim=16, enc_depth=1, pred_depth=1, heads=2, offsets=(1,)).eval()
+    tgt = copy.deepcopy(m.encoder).eval()
+    JEPA.forward = spy
+    try:
+        windowed_predict(m, tgt, torch.randn(1, 400, 8), context=64, stride=32)
+    finally:
+        JEPA.forward = real
+    assert seen and max(seen) <= 64, f"a window exceeded the context: {max(seen)}"

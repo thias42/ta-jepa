@@ -27,19 +27,26 @@ predictor, latent smooth-L1 + **VICReg** (`src/tajepa/models/jepa.py`,
 - **Forecasting-error-vs-horizon** was the eval built to replace the probe. It had two
   defects, both now fixed: model forecasts were scored in a space the grounding head never
   emitted into (which manufactured a "decoder doesn't transfer" result), and skill was
-  measured against persistence. Against a **linear AR(4)** floor — closed-form, no training
-  — the causal predictor is *behind* in its own latent space at every horizon, and at best
-  at parity in codec space. This holds for the multi-domain (FMA+FSD50K) checkpoint too:
-  its published `+29/46/51/45%` latent skill reproduces exactly against persistence, but
-  reads **−15% to −26%** against AR(4). Broader pretraining raised the persistence number
-  and *lowered* the AR one — the metric that improved is the one that doesn't discriminate.
-  See the Correction section of [`RESULTS.md`](RESULTS.md).
+  measured against persistence rather than a **linear AR(4)** floor (closed-form, no
+  training). Scored inside the 256-frame training window the JEPA beats AR(4) at every
+  horizon — latent **+3% to +10%**, codec **+0.010 to +0.036** cosine, both domains — but
+  its margin over persistence (+17–45%) is an order of magnitude larger, so persistence was
+  flattering it badly. See the Correction sections of [`RESULTS.md`](RESULTS.md).
+- **Absolute positional encodings do not extrapolate.** Past its 256-frame (3.41 s) training
+  window the model degrades to *worse than persistence*; the same audio re-fed inside a
+  256-frame window scores fine, so it is position, not content. Inference now windows
+  (`windowed_predict`) and the trained window travels in the checkpoint (`context_frames`)
+  so evaluation clamps to it. Fixing it properly means RoPE/ALiBi or longer training windows.
 - No collapse, throughout: effective rank 226–241/256.
 
-**The Phase 1 gate is not passed.** Phase 2 (control) was built anyway and its results
-stand on their own terms — but they rest on a backbone whose forecasting advantage over
-trivial linear extrapolation is not established. The open experiment is horizons long
-enough (≫ 107 ms) that linear extrapolation fails.
+**Phase 1 gate: partly passed, on one criterion of two.** The backbone does beat trivial
+linear extrapolation in its own regime (+3% to +10% over AR(4)) — a real result, but a
+modest one from single runs without error bars, and it should be re-measured with seeds
+before much is built on it. The X-ARES criterion was never actually run; a homemade ESC-50
+probe stood in for it, and the JEPA fails that. Phase 2 (control) was built anyway and its
+results stand on their own terms. Two open experiments: horizons well beyond the 13–107 ms
+tested, and a context long enough (or a positional scheme that extrapolates) that the model
+is usable past 3.41 s.
 
 ### Phase 0 (scaffolding & baselines) — complete
 

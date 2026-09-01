@@ -404,6 +404,72 @@ matches the specialist baseline on transfer, wins in latent space. (The meanstd-
 Next extensions: multi-step rollout skill (Phase 3); decoded-audio listening tests; and an
 in-domain forecasting check on the multi-domain model (FSD50K-eval / FMA val).
 
+### Correction to the correction — the AR comparison was scored outside the training window
+
+The numbers immediately above ("Defect 2") are wrong, in the same way the results they
+replaced were wrong: they score the model in a regime it was never trained for.
+
+The encoder adds **absolute sinusoidal positional encodings**, and these models were trained
+with `--window 256` (3.41 s at 75 Hz). `sinusoidal_pe` is closed-form, so it returns values
+for position 300 or 900 without complaint — but those positions were never learned. Past
+frame 256 the representation goes out of distribution and forward prediction collapses. The
+forecasting eval used `max_frames=512`, and ESC-50 clips are 375 frames, so **32–50% of every
+scored frame sat outside the training window.**
+
+Per-frame latent L1 on the demo clips, showing the knee at exactly frame 256:
+
+| frames | seconds | model | AR(4) | persistence |
+|---|---|---|---|---|
+| 192–224 | 2.56–2.99 | **0.408** | 0.437 | 0.629 |
+| 224–256 | 2.99–3.41 | **0.453** | 0.476 | 0.672 |
+| 256–288 | 3.41–3.84 | 0.674 | **0.470** | 0.643 |
+| 288–320 | 3.84–4.27 | 0.667 | **0.416** | 0.567 |
+
+Past the window the model is *worse than persistence* (0.674 vs 0.643). `LinearAR` is
+unaffected because it takes no position input at all — a fixed linear map on the last four
+latents — so it stays flat and wins the average by default.
+
+**Control (same audio, same weights, only the position indices differ):**
+
+| tail frames fed as… | model vs AR(4) |
+|---|---|
+| part of the full 375-frame clip (positions 256+) | −19.9% |
+| a 256-frame window (positions < 256) | **+7.4%** |
+
+Position, not content.
+
+**Corrected result — scored inside the training window:**
+
+| latent skill vs AR(4) | k=1 | k=2 | k=4 | k=8 |
+|---|---|---|---|---|
+| ESC-50, first 256 frames | **+6.3%** | **+10.1%** | **+10.4%** | **+9.4%** |
+| ESC-50, first 512 frames (contaminated) | −15.0% | −9.7% | −10.6% | −11.8% |
+| FMA, first 256 frames | **+3.2%** | **+4.7%** | **+4.8%** | **+3.9%** |
+| FMA, first 512 frames (contaminated) | −18.5% | −15.4% | −16.4% | −17.6% |
+
+Codec space agrees: in-window ESC-50 **+0.023…+0.036**, FMA **+0.010…+0.030** cosine over
+AR(4) — positive at every horizon in both domains.
+
+**So the causal JEPA does beat a closed-form linear AR(4), inside the regime it was trained
+for, by +3% to +10%.** What survives from "Defect 2" is the part that mattered: persistence
+is far too weak a bar. The model's honest margin over AR(4) is +3–10%, not the +17–45% it
+shows over persistence — an order of magnitude smaller, and small enough that it should be
+reported with seeds and error bars before much weight is put on it.
+
+**A real, separate limitation.** The model cannot process sequences longer than its training
+window at all — it degrades below persistence. That is a genuine Phase 1 finding, just a
+different one. Absolute sinusoidal encodings do not extrapolate; RoPE or ALiBi would, and so
+would training on longer or mixed-length windows. Until then, inference must window:
+`models/jepa.py::windowed_predict` slides overlapping ≤context windows (keeping the last
+`stride` frames of each, so every frame has both an in-range position and real history), and
+the trained window now travels in the checkpoint as `context_frames` so evaluation clamps to
+it by default instead of silently extrapolating.
+
+> **Still outstanding:** the multi-domain (FMA+FSD50K) table below was measured on full
+> 375-frame ESC-50 clips, so ~32% of its frames are beyond the window and its
+> skill-vs-AR figures understate the model for the same reason. It needs re-running through
+> the context-aware eval; the checkpoint lives in R2, not locally.
+
 ### The multi-domain checkpoint, re-run through the fixed eval
 
 `jepa_multi` (FMA + FSD50K, 25k steps) re-evaluated on ESC-50 with both defects fixed, AR(4)

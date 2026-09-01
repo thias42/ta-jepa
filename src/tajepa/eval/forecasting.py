@@ -43,6 +43,27 @@ def _skill(model_err: float, ref_err: float) -> float:
     return 1 - model_err / ref_err if ref_err > 0 else float("nan")
 
 
+def _resolve_frames(model, max_frames):
+    """Clamp scoring to the model's trained context unless told otherwise.
+
+    Scoring past it measures positional extrapolation, not forecasting skill: on a
+    256-frame model the per-frame latent error jumps from 0.45 to 0.67 at exactly frame 256
+    while persistence sits at 0.64, so a long clip drags a genuinely positive skill negative.
+    ``max_frames=None`` follows the checkpoint's recorded window; an explicit value is
+    honoured but warned about when it exceeds it.
+    """
+    ctx = getattr(model, "trained_context", None) if model is not None else None
+    if max_frames is None:
+        return ctx or 512
+    if ctx and max_frames > ctx:
+        import warnings
+        warnings.warn(
+            f"Scoring {max_frames} frames but the model was trained on {ctx}. Frames beyond "
+            f"{ctx} are positional extrapolation and will understate real skill — pass "
+            f"max_frames<={ctx}, or use windowed_predict.", RuntimeWarning, stacklevel=3)
+    return max_frames
+
+
 def _codec_space(model, dataset, device, stats):
     """Resolve the standardization used to score codec-space forecasts, and warn if the
     model has no recorded output space (a pre-stats checkpoint) — its forecasts are then
@@ -111,7 +132,7 @@ def codec_forecast_curves(
     apc: torch.nn.Module | None = None,
     ar: torch.nn.Module | None = None,
     max_clips: int | None = None,
-    max_frames: int = 512,
+    max_frames: int | None = None,
     stats: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> dict[str, dict]:
     """Codec-space forecasting curves for every predictor on the same axes.
@@ -122,6 +143,7 @@ def codec_forecast_curves(
     evaluated at its own trained offsets. Returns ``{name: {offset: {cos, l1}}}``.
     """
     device = device or resolve_device("auto")
+    max_frames = _resolve_frames(jepa, max_frames)
     mu, sd = _codec_space(jepa, dataset, device, stats)
     jepa = jepa.to(device).eval() if jepa is not None else None
     apc = apc.to(device).eval() if apc is not None else None
@@ -188,7 +210,7 @@ def forecast_report(
     dataset: Dataset,
     device: str | None = None,
     max_clips: int | None = None,
-    max_frames: int = 512,
+    max_frames: int | None = None,
     stats: tuple[torch.Tensor, torch.Tensor] | None = None,
     codec_ar: torch.nn.Module | None = None,
     latent_ar: torch.nn.Module | None = None,
@@ -200,6 +222,7 @@ def forecast_report(
     persistence — and the AR figure is the one that means something.
     """
     device = device or resolve_device("auto")
+    max_frames = _resolve_frames(jepa, max_frames)
     jepa = jepa.to(device).eval()
     target_encoder = target_encoder.to(device).eval()
     mu, sd = _codec_space(jepa, dataset, device, stats)
@@ -250,7 +273,7 @@ def fit_latent_ar(
     order: int = 4,
     dim: int | None = None,
     max_clips: int = 200,
-    max_frames: int = 512,
+    max_frames: int | None = None,
     device: str | None = None,
 ):
     """Fit a ``LinearAR`` in an encoder's *latent* space — the trivial reference for the
@@ -262,6 +285,7 @@ def fit_latent_ar(
     from ..models.linear_ar import LinearAR, _stride
 
     device = device or resolve_device("auto")
+    max_frames = max_frames or 512
     encoder = encoder.to(device).eval()
     seqs = []
     for i in _stride(len(dataset), max_clips):

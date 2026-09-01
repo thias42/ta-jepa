@@ -200,6 +200,13 @@ so cloud == local code. Setup + commands: `docs/cloud-modal.md`. Cloud deps: `pi
 - Keep collapse diagnostics (`diagnostics.py`) wired into every training run.
 - **Never report forecasting skill against persistence alone** — always against `LinearAR`
   (`--ar-order`, default 4). A result that only beats persistence is not a result.
+- **Never score past the trained context.** The encoder uses *absolute* sinusoidal
+  positional encodings, so the model is only valid below its training `--window` (default
+  256 = 3.41 s at 75 Hz). `sinusoidal_pe` returns values for any index, so over-length
+  inference fails silently: past the window the forecast drops *below persistence*, which
+  once inverted a headline (in-window +6% vs AR(4), scored to 512 frames −15%). Training
+  records the window as `context_frames`; eval clamps to it by default; long audio goes
+  through `windowed_predict`. RoPE/ALiBi or mixed-length training would lift the limit.
 - **The grounding head emits into a recorded space.** `grounding_loss` requires explicit
   `mean`/`std`; training computes them once via `data.stats.codec_stats` and stores them on
   the model, so they travel in the checkpoint. Anything consuming the head's output must use

@@ -99,6 +99,35 @@ class CodecStatsMixin:
         return self.recon_head(z) * self.codec_std + self.codec_mean
 
 
+class ContextWindowMixin:
+    """Records the sequence length the model was trained on.
+
+    The encoder adds *absolute* sinusoidal positional encodings, so position is part of the
+    learned function. ``sinusoidal_pe`` is closed-form and happily returns values for any
+    index, which makes over-length inference fail silently rather than loudly: past the
+    trained length the representation goes out of distribution and forward prediction
+    collapses to *worse than persistence*. Measured on a 256-frame model, per-frame latent
+    L1 jumps 0.45 -> 0.67 at exactly frame 256 (3.41 s at 75 Hz) while persistence sits at
+    0.64 — and the same audio frames re-fed inside a 256-frame window score fine, so it is
+    position, not content.
+
+    Recording the window as a buffer lets evaluation and inference respect it instead of
+    silently measuring extrapolation. 0 means "unknown" (a pre-context checkpoint).
+    """
+
+    def _init_context(self) -> None:
+        self.register_buffer("context_frames", torch.zeros((), dtype=torch.long))
+
+    @torch.no_grad()
+    def set_context_frames(self, n: int) -> None:
+        self.context_frames.fill_(int(n))
+
+    @property
+    def trained_context(self) -> int | None:
+        n = int(self.context_frames)
+        return n if n > 0 else None
+
+
 class CausalTransformer(nn.Module):
     """Input-projected, positionally-encoded causal transformer: ``[B,T,in_dim] -> [B,T,dim]``."""
 
@@ -133,7 +162,7 @@ class CausalPredictor(nn.Module):
         return {o: self.heads[str(o)](h) for o in self.offsets}
 
 
-class JEPA(CodecStatsMixin, nn.Module):
+class JEPA(CodecStatsMixin, ContextWindowMixin, nn.Module):
     def __init__(
         self, in_dim=128, dim=256, enc_depth=6, pred_depth=3, heads=4,
         offsets=(1, 2, 3, 4), dropout=0.0,
@@ -148,6 +177,7 @@ class JEPA(CodecStatsMixin, nn.Module):
         # latent to acoustically-rich content (optional; trainer weights it).
         self.recon_head = nn.Linear(dim, in_dim)
         self._init_codec_stats(in_dim)
+        self._init_context()
 
     def forward(self, x, pad_mask=None):
         z = self.encoder(x, pad_mask)            # online latents [B,T,dim]
@@ -245,7 +275,9 @@ def backfill_codec_stats(state_dict: dict, prefix: str, in_dim: int) -> dict:
     head emits into — callers must supply it (``--train-stats``) or codec-space numbers
     will be wrong in exactly the way this machinery exists to prevent.
     """
-    for name, default in (("codec_mean", torch.zeros(in_dim)), ("codec_std", torch.ones(in_dim))):
+    for name, default in (("codec_mean", torch.zeros(in_dim)),
+                          ("codec_std", torch.ones(in_dim)),
+                          ("context_frames", torch.zeros((), dtype=torch.long))):
         state_dict.setdefault(f"{prefix}{name}", default)
     return state_dict
 
@@ -260,3 +292,45 @@ def latent_persistence_l1(z_target, offset, pad_mask=None) -> float:
         valid = (~pad_mask[:, offset:]).unsqueeze(-1)
         return float((l1 * valid).sum() / (valid.sum().clamp(min=1) * z_target.shape[-1]))
     return float(l1.mean())
+
+
+@torch.no_grad()
+def windowed_predict(jepa, target, x, context: int, stride: int | None = None):
+    """Encode and predict a sequence longer than the trained context, in-distribution.
+
+    Absolute positional encodings mean the model is only valid for positions ``< context``
+    (see ``ContextWindowMixin``). Running a long clip in one pass silently measures
+    extrapolation; this instead slides overlapping windows of ``context`` frames and keeps
+    only the last ``stride`` frames of each, so every returned frame has both an in-range
+    position **and** at least ``context - stride`` frames of real history behind it. The
+    first window is kept whole — those frames have less history, but that is genuine causal
+    warm-up, not extrapolation.
+
+    Returns ``(preds {offset: [1, T, dim]}, z_target [1, T, dim])`` covering all ``T``.
+    """
+    t = x.shape[1]
+    stride = stride or max(1, context // 2)
+    if t <= context:
+        _, preds = jepa(x)
+        return preds, target(x)
+
+    offsets = tuple(jepa.offsets)
+    out = {o: x.new_zeros(x.shape[0], t, jepa.dim) for o in offsets}
+    z_tgt = x.new_zeros(x.shape[0], t, jepa.dim)
+    filled = 0
+    starts = list(range(0, t - context + 1, stride))
+    if starts[-1] + context < t:
+        starts.append(t - context)          # final window flush to the end
+    for s_i in starts:
+        chunk = x[:, s_i : s_i + context]
+        _, preds = jepa(chunk)
+        zt = target(chunk)
+        keep_from = max(filled - s_i, 0)     # never re-write frames already committed
+        if keep_from >= context:
+            continue
+        lo, hi = s_i + keep_from, s_i + context
+        for o in offsets:
+            out[o][:, lo:hi] = preds[o][:, keep_from:]
+        z_tgt[:, lo:hi] = zt[:, keep_from:]
+        filled = hi
+    return out, z_tgt

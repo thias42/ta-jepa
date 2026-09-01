@@ -165,6 +165,9 @@ def main() -> None:
     # saved with the checkpoint and every consumer scores in the same space.
     mean, std = codec_stats(cache)
     model.model.set_codec_stats(mean, std)
+    # Record the trained sequence length too: absolute positional encodings make the
+    # model valid only below it, and inference/eval must window rather than extrapolate.
+    model.model.set_context_frames(args.window)
 
     trainer.fit(model, loader)
     if args.save:
