@@ -25,9 +25,15 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from tajepa.data.embedding_dataset import PairedSequenceDataset, pad_collate
+from tajepa.data.stats import codec_stats
 from tajepa.diagnostics import collapse_report, codebook_perplexity
 from tajepa.models.residual import ResidualActionJEPA
-from tajepa.models.jepa import vicreg_terms, grounding_loss, latent_persistence_l1
+from tajepa.models.jepa import (
+    backfill_codec_stats,
+    grounding_loss,
+    latent_persistence_l1,
+    vicreg_terms,
+)
 from tajepa.utils import seed_everything
 
 
@@ -62,6 +68,12 @@ class ResidualLightning(pl.LightningModule):
         for c, t in zip(self.model.encoder.parameters(), self.target.parameters()):
             t.mul_(m).add_(c.detach(), alpha=1 - m)
 
+    def on_load_checkpoint(self, checkpoint) -> None:
+        """Let checkpoints written before codec statistics existed still load. They carry
+        no record of the grounding head's output space, so callers must supply it
+        (``--train-stats`` / ``ensure_codec_stats``) before trusting codec-space results."""
+        backfill_codec_stats(checkpoint["state_dict"], "model.", self.hparams.in_dim)
+
     def training_step(self, batch, _):
         x, pad = batch["features"], batch["pad_mask"]
         desc = standardize(batch["control"], pad)
@@ -76,7 +88,8 @@ class ResidualLightning(pl.LightningModule):
             if valid is not None else diff.mean()
 
         var_loss, cov_loss = vicreg_terms(z, pad)
-        recon_loss = grounding_loss(self.model.reconstruct(z), x, pad)
+        recon_loss = grounding_loss(self.model.reconstruct(z), x, pad,
+                                    mean=self.model.codec_mean, std=self.model.codec_std)
         avg_probs = out["probs"][~pad].mean(0) if pad is not None else out["probs"].reshape(-1, self.num_codes).mean(0)
         code_entropy = -(avg_probs * (avg_probs + 1e-9).log()).sum()
 
@@ -151,6 +164,11 @@ def main() -> None:
     trainer = pl.Trainer(max_steps=args.max_steps, accelerator=args.accelerator,
                          log_every_n_steps=10, enable_checkpointing=False,
                          default_root_dir="lightning_logs/residual")
+    # Record the codec standardization the grounding head emits into, so it is
+    # saved with the checkpoint and every consumer scores in the same space.
+    mean, std = codec_stats(feats)
+    model.model.set_codec_stats(mean, std)
+
     trainer.fit(model, loader)
     if args.save:
         args.save.parent.mkdir(parents=True, exist_ok=True)

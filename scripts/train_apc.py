@@ -1,7 +1,8 @@
 """Train the APC baseline on cached frame features (codec embeddings or mel).
 
 This is the Phase 0 known-good causal-prediction reference. It logs, every step:
-the APC L1 per offset, the naive *persistence* L1 (the bar Phase 1 must beat), and
+the APC L1 per offset, the naive *persistence* L1 (a sanity floor only — the bar that
+counts is the closed-form ``LinearAR``, see ``scripts/run_forecast.py --ar-order``), and
 the collapse diagnostics (feature std / effective rank) so the monitoring path is
 exercised from day one.
 

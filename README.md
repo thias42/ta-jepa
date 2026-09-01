@@ -13,22 +13,33 @@ audio analogue of an action-conditioned V-JEPA, not a static representation lear
 
 ## Status
 
-**Phase 1 (causal latent JEPA) — the core model — is implemented, trained, and on the
-metric a world model is actually for, it works.** Causal frame encoder + EMA target +
-causal multi-offset predictor, latent smooth-L1 + **VICReg** (`src/tajepa/models/jepa.py`,
+**Phase 1 (causal latent JEPA) — the core model — is implemented and trained; whether it
+works is currently open.** Causal frame encoder + EMA target + causal multi-offset
+predictor, latent smooth-L1 + **VICReg** (`src/tajepa/models/jepa.py`,
 `scripts/train_jepa.py`). The arc (full detail in [`RESULTS.md`](RESULTS.md)):
 
-- The FMA-only model **under-performs the linear probe** (44.8% vs codec 54.7%) — but that
-  turned out to be a *metric artifact*: the causal-predictive objective makes the latent
-  temporally smooth (verified: autocorr 0.67 vs 0.27), which the std-pooling probe penalizes.
-  The probe rewards a jumpiness a world model should suppress, so we built a better eval.
-- **Forecasting-error-vs-horizon** (the world-model eval): the model beats latent persistence
-  everywhere; in-domain it forecasts the actual future audio competitively with APC.
-- **Multi-domain** (FMA + FSD50K, trained on Modal): closes the cross-domain gap — on unseen
-  ESC-50 it now **beats persistence at every horizon and matches APC** (the codec-frame
-  specialist), with latent skill +29–51%. No collapse (effective rank 226/256).
+- The FMA-only model **under-performs the linear probe** (44.8% vs codec 54.7%). That looks
+  like a *readout* effect rather than lost information: the latent is temporally smooth
+  (autocorr 0.67 vs 0.27) and std-pooling can't read it, and passing the latent through the
+  model's own grounding head before pooling recovers most of the gap (53.8% vs codec 55.0%).
+  Caveat on the stated cause: an *untrained* causal transformer already sits at 0.58
+  autocorr, so most of the smoothness is architectural, not learned.
+- **Forecasting-error-vs-horizon** was the eval built to replace the probe. It had two
+  defects, both now fixed: model forecasts were scored in a space the grounding head never
+  emitted into (which manufactured a "decoder doesn't transfer" result), and skill was
+  measured against persistence. Against a **linear AR(4)** floor — closed-form, no training
+  — the causal predictor is *behind* in its own latent space at every horizon, and at best
+  at parity in codec space. This holds for the multi-domain (FMA+FSD50K) checkpoint too:
+  its published `+29/46/51/45%` latent skill reproduces exactly against persistence, but
+  reads **−15% to −26%** against AR(4). Broader pretraining raised the persistence number
+  and *lowered* the AR one — the metric that improved is the one that doesn't discriminate.
+  See the Correction section of [`RESULTS.md`](RESULTS.md).
+- No collapse, throughout: effective rank 226–241/256.
 
-Phase 2 (control) is gated on Phase 1 being sound; on the forecasting metric it now is.
+**The Phase 1 gate is not passed.** Phase 2 (control) was built anyway and its results
+stand on their own terms — but they rest on a backbone whose forecasting advantage over
+trivial linear extrapolation is not established. The open experiment is horizons long
+enough (≫ 107 ms) that linear extrapolation fails.
 
 ### Phase 0 (scaffolding & baselines) — complete
 
@@ -37,7 +48,8 @@ What's implemented and verified end-to-end:
 - **Codec frontend** — frozen EnCodec, continuous *pre-quantizer* embeddings (75 Hz, dim 128).
 - **Offline embedding cache** — `[T, D]` `.npy` per clip + `meta.yaml`.
 - **APC baseline** — causal LSTM + residual + multi-offset time-shift, L1 on the actual
-  frame; includes a naive persistence baseline (the bar Phase 1 must beat).
+  frame; includes a naive persistence baseline (a sanity floor — the real bar is the
+  closed-form `LinearAR`, `src/tajepa/models/linear_ar.py`).
 - **A-JEPA mel baseline** — masked latent prediction over spectrogram patches with an EMA
   target encoder (bidirectional; X-ARES-comparable). Faithful to I-JEPA/A-JEPA — EMA +
   stop-grad only, no VICReg (that's reserved for our causal JEPA).
@@ -130,14 +142,17 @@ one-click loading.
 
 **Anticipation** — the flagship, and the decoder-free, V-JEPA-style showcase. From past
 context only, the causal model predicts the near future *in latent space*; the demo plots
-its per-frame prediction error against a persistence baseline under a spectrogram, marks the
-**surprise peaks** (least-predictable frames), and reports forecasting skill
-(`1 − model/persistence`). A playhead sweeps both panels in time with the audio. Use a
-Phase 1 JEPA checkpoint:
+its per-frame prediction error under a spectrogram, marks the **surprise peaks**
+(least-predictable frames), and reports forecasting skill against **two** references:
+persistence (easy) and a closed-form **linear AR(4)** (the bar that counts — the model is
+currently behind it). A playhead sweeps both panels in time with the audio. Use a Phase 1
+JEPA checkpoint, and pass a pre-fitted AR (`--ar-state`) or a corpus to fit one from
+(`--ar-corpus`); without either, only the weak persistence number is shown:
 
 ```bash
 P=$(conda run -n ta-jepa which python)
-$P scripts/demo_anticipation.py --ckpt runs/jepa_fma_grounded.ckpt --examples data/demo_clips
+$P scripts/demo_anticipation.py --ckpt runs/jepa_fma_grounded.ckpt \
+    --examples space/anticipation/examples --ar-state space/anticipation/assets/ar_latent_fma.pt
 ```
 
 **Control knobs** (Phase 2a) — steer a clip's near-future along the validated dials

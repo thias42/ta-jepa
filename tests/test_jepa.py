@@ -57,7 +57,8 @@ def test_grounding_reconstruction_learns():
     first = last = None
     for step in range(60):
         z = model.encode(x)
-        loss = grounding_loss(model.reconstruct(z), x)
+        loss = grounding_loss(model.reconstruct(z), x,
+                              mean=model.codec_mean, std=model.codec_std)
         opt.zero_grad(); loss.backward(); opt.step()
         if step == 0:
             first = loss.item()

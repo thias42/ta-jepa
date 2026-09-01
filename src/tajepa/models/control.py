@@ -17,7 +17,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from .jepa import CausalTransformer, _encoder_stack, causal_mask
+from .jepa import CausalTransformer, CodecStatsMixin, _encoder_stack, causal_mask
 
 
 class FiLM(nn.Module):
@@ -53,7 +53,7 @@ class ControllablePredictor(nn.Module):
         return {o: self.heads[str(o)](self.films[str(o)](h, deltas[o])) for o in self.offsets}
 
 
-class ControllableJEPA(nn.Module):
+class ControllableJEPA(CodecStatsMixin, nn.Module):
     def __init__(
         self, in_dim=128, dim=256, enc_depth=6, pred_depth=3, heads=4,
         offsets=(1, 2, 3, 4), cond_dim=3, dropout=0.0, augment_input=False,
@@ -71,6 +71,7 @@ class ControllableJEPA(nn.Module):
         self.encoder = CausalTransformer(enc_in, dim, enc_depth, heads, dropout)
         self.predictor = ControllablePredictor(dim, pred_depth, heads, self.offsets, cond_dim, dropout)
         self.recon_head = nn.Linear(dim, in_dim)   # grounding / latent->codec decoder
+        self._init_codec_stats(in_dim)
         # descriptor head: read the descriptors back from a latent. Used to *ground the
         # control* — the predicted future latent must read as the commanded descriptor,
         # which is the disentanglement lever (cf. DAFx23 descriptor regularization).
@@ -103,9 +104,6 @@ class ControllableJEPA(nn.Module):
         steering still comes from ``deltas``."""
         z = self.encoder(self.build_enc_input(x, desc), pad_mask)
         return z, self.predictor(z, deltas, pad_mask)
-
-    def reconstruct(self, z) -> torch.Tensor:
-        return self.recon_head(z)
 
     def describe(self, h) -> torch.Tensor:
         """Read descriptors back from a latent / prediction (for control grounding)."""

@@ -52,6 +52,53 @@ def _encoder_stack(dim, depth, heads, dropout):
     return nn.TransformerEncoder(layer, num_layers=depth, enable_nested_tensor=False)
 
 
+# --------------------------------------------------------------------------- #
+# Grounding-head output space
+# --------------------------------------------------------------------------- #
+class CodecStatsMixin:
+    """Owns the standardization the grounding head emits into.
+
+    ``recon_head`` predicts a *standardized* codec frame, so its output only means
+    something relative to a specific ``(mean, std)``. Those statistics are registered as
+    buffers, so they are saved into the checkpoint and travel with the weights: training
+    sets them once from the training cache, and every consumer (forecasting, rendering,
+    demos) reads them back rather than inventing its own. Computing them ad hoc at the
+    point of use is the bug this exists to prevent — evaluating the head's output against
+    the *eval* set's statistics on a transfer set charges the mismatch to the model, which
+    is enough to flip the sign of a forecasting result.
+
+    Defaults are mean 0 / std 1 (i.e. "raw codec"), which is also what pre-stats
+    checkpoints backfill to; ``set_codec_stats`` must be called for those to be correct.
+    """
+
+    def _init_codec_stats(self, in_dim: int) -> None:
+        self.register_buffer("codec_mean", torch.zeros(in_dim))
+        self.register_buffer("codec_std", torch.ones(in_dim))
+
+    @torch.no_grad()
+    def set_codec_stats(self, mean: torch.Tensor, std: torch.Tensor) -> None:
+        """Record the codec standardization used for the grounding target."""
+        self.codec_mean.copy_(mean.detach().reshape(-1).to(self.codec_mean))
+        self.codec_std.copy_(std.detach().reshape(-1).to(self.codec_std).clamp_min(1e-4))
+
+    @property
+    def has_codec_stats(self) -> bool:
+        """False when the buffers are still the identity (nothing was recorded)."""
+        return bool((self.codec_std != 1).any() or (self.codec_mean != 0).any())
+
+    def standardize_codec(self, x: torch.Tensor) -> torch.Tensor:
+        return (x - self.codec_mean) / self.codec_std
+
+    def reconstruct(self, z) -> torch.Tensor:
+        """``z_t -> standardized codec frame`` (the grounding head's native output)."""
+        return self.recon_head(z)
+
+    def reconstruct_raw(self, z) -> torch.Tensor:
+        """``z_t -> raw codec frame``. Use this whenever the output leaves the model —
+        forecasting, rendering, decoding — so no caller has to guess the space."""
+        return self.recon_head(z) * self.codec_std + self.codec_mean
+
+
 class CausalTransformer(nn.Module):
     """Input-projected, positionally-encoded causal transformer: ``[B,T,in_dim] -> [B,T,dim]``."""
 
@@ -86,7 +133,7 @@ class CausalPredictor(nn.Module):
         return {o: self.heads[str(o)](h) for o in self.offsets}
 
 
-class JEPA(nn.Module):
+class JEPA(CodecStatsMixin, nn.Module):
     def __init__(
         self, in_dim=128, dim=256, enc_depth=6, pred_depth=3, heads=4,
         offsets=(1, 2, 3, 4), dropout=0.0,
@@ -100,15 +147,12 @@ class JEPA(nn.Module):
         # Grounding head: reconstruct the codec frame from the latent, to anchor the
         # latent to acoustically-rich content (optional; trainer weights it).
         self.recon_head = nn.Linear(dim, in_dim)
+        self._init_codec_stats(in_dim)
 
     def forward(self, x, pad_mask=None):
         z = self.encoder(x, pad_mask)            # online latents [B,T,dim]
         preds = self.predictor(z, pad_mask)      # offset -> [B,T,dim]
         return z, preds
-
-    def reconstruct(self, z) -> torch.Tensor:
-        """Predict the codec frame from the latent ``z_t -> x_t`` (grounding anchor)."""
-        return self.recon_head(z)
 
     def encode(self, x, pad_mask=None) -> torch.Tensor:
         return self.encoder(x, pad_mask)
@@ -175,20 +219,35 @@ def jepa_loss(
     return total, logs
 
 
-def grounding_loss(recon, x, pad_mask=None):
-    """Masked MSE of the reconstructed codec frame against a per-batch-standardized
-    target. Standardizing the target keeps this O(1) — comparable to the latent
-    prediction loss — so the grounding coefficient stays interpretable regardless of
-    the raw codec embedding scale."""
-    rows = _valid_rows(x, pad_mask)
-    mu = rows.mean(0)
-    sd = rows.std(0).clamp_min(1e-4)
-    x_n = (x - mu) / sd
+def grounding_loss(recon, x, pad_mask=None, *, mean, std):
+    """Masked MSE of the reconstructed codec frame against ``(x - mean) / std``.
+
+    ``mean``/``std`` are **required and keyword-only** on purpose. They were previously
+    computed per batch, which left the head emitting into an implicit, drifting space
+    that no consumer could reconstruct — and evaluation code then standardized with
+    whatever statistics were at hand. Pass fixed dataset statistics
+    (``data.stats.codec_stats``) and record them on the model with ``set_codec_stats``.
+    Standardizing still keeps this term O(1), so the grounding coefficient stays
+    interpretable regardless of the raw codec embedding scale.
+    """
+    x_n = (x - mean) / std
     if pad_mask is not None:
         valid = (~pad_mask).unsqueeze(-1)
         return (F.mse_loss(recon, x_n, reduction="none") * valid).sum() / (
             valid.sum().clamp(min=1) * x.shape[-1])
     return F.mse_loss(recon, x_n)
+
+
+def backfill_codec_stats(state_dict: dict, prefix: str, in_dim: int) -> dict:
+    """Add identity ``codec_mean``/``codec_std`` to a pre-stats checkpoint.
+
+    Lets older checkpoints load, but they carry *no* record of the space their grounding
+    head emits into — callers must supply it (``--train-stats``) or codec-space numbers
+    will be wrong in exactly the way this machinery exists to prevent.
+    """
+    for name, default in (("codec_mean", torch.zeros(in_dim)), ("codec_std", torch.ones(in_dim))):
+        state_dict.setdefault(f"{prefix}{name}", default)
+    return state_dict
 
 
 @torch.no_grad()

@@ -1,3 +1,4 @@
+from .linear_ar import LinearAR, fit_linear_ar
 from .apc import APCModel, apc_loss
 from .ajepa import AJEPA, ajepa_loss, random_masking, sincos_2d_pos_embed
 from .jepa import (
@@ -26,6 +27,8 @@ __all__ = [
     "CausalPredictor",
     "jepa_loss",
     "vicreg_terms",
+    "LinearAR",
+    "fit_linear_ar",
     "grounding_loss",
     "latent_persistence_l1",
     "causal_mask",

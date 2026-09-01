@@ -29,6 +29,16 @@ def main() -> None:
     ap.add_argument("--ckpt", type=Path, required=True, help="Phase 1 causal JEPA checkpoint.")
     ap.add_argument("--max-seconds", type=float, default=12.0, help="Trim input (0 = no trim).")
     ap.add_argument("--examples", type=Path, default=None, help="Dir of example clips for the UI.")
+    ap.add_argument("--ar-state", type=Path, default=None,
+                    help="A LinearAR saved with LinearAR.save, fitted offline on the "
+                         "checkpoint's training data. Preferred over --ar-corpus: the "
+                         "reference then matches the reported numbers and costs nothing "
+                         "at startup.")
+    ap.add_argument("--ar-corpus", type=Path, default=None,
+                    help="Dir of audio used to fit the linear-AR reference (the bar that "
+                         "counts; defaults to --examples). Without one only the weak "
+                         "persistence skill is shown.")
+    ap.add_argument("--ar-order", type=int, default=4, help="Order of the linear-AR reference.")
     ap.add_argument("--device", default=None)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=7861)
@@ -55,6 +65,7 @@ def main() -> None:
     codec = build_frontend(CodecConfig(device=device))
 
     demo = build_anticipation_demo(jepa, target, codec, max_seconds=args.max_seconds,
+                                   ar_state=args.ar_state, ar_corpus=args.ar_corpus, ar_order=args.ar_order,
                                    examples=args.examples)
     allowed = [str(Path(args.examples).resolve())] if args.examples else None
     # Gradio 6 takes `head` (the playhead-animation script) on launch(), not on Blocks().

@@ -4,8 +4,9 @@ The real test of supervised control (plan): perturb one control descriptor's del
 *render the prediction back to audio*, re-run the MIR extractor, and check (a) the
 intended attribute moved and (b) the others stayed put (disentanglement).
 
-Render path: predicted latent → grounding head → un-standardize → codec decoder → audio
-→ re-extract descriptors. We report the **controllability matrix** ``M[p, m]`` = mean
+Render path: predicted latent → grounding head → codec decoder → audio → re-extract
+descriptors. The grounding head emits *raw* codec via the statistics recorded on the
+model (``reconstruct_raw``), so the render never has to re-derive that space. We report the **controllability matrix** ``M[p, m]`` = mean
 change in *measured* descriptor ``m`` when *perturbing* control ``p`` by ``+bump``. A
 controllable, disentangled model has a positive, diagonally-dominant ``M``. Because we
 measure the *difference* (perturbed − baseline), systematic render error (continuous-vs-
@@ -27,7 +28,7 @@ from ..config import resolve_device
 def controllability_matrix(
     model: torch.nn.Module,
     dataset,
-    render_fn,                # std_codec [B,T,Dc] -> audio [B,1,N]
+    render_fn,                # raw codec [B,T,Dc] -> audio [B,1,N]
     desc_fn,                  # audio [B,1,N] -> descriptors [B,T,C]
     offset: int = 1,
     bump: float = 2.0,
@@ -46,7 +47,7 @@ def controllability_matrix(
         # desc=ctrl supplies the (augmented) encoder input when the model uses it; steering
         # comes from the perturbed deltas. Ignored by non-augmented models.
         _, preds = model.predict_with_deltas(x, deltas, desc=ctrl)
-        return desc_fn(render_fn(model.reconstruct(preds[offset]))).mean(dim=1)  # [B, C]
+        return desc_fn(render_fn(model.reconstruct_raw(preds[offset]))).mean(dim=1)  # [B, C]
 
     n = min(n_clips, len(dataset))
     for idx in range(n):

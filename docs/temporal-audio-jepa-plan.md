@@ -9,11 +9,24 @@ A causal, action-conditioned latent world model for general audio (music, enviro
 This document is the original design rationale; the body below is preserved as written. Execution
 (Phases 0–2) revised several points — see `RESULTS.md` for the data behind each:
 
-- **The Phase 1 gate ("competitive on X-ARES", below) is the wrong yardstick.** The causal
-  objective makes the latent temporally *smooth* (autocorr 0.67 vs 0.27 for codec/APC), which the
-  std-pooling linear probe penalizes — the JEPA probes *below* the codec baseline (44.8% vs 54.7%)
-  yet forecasts well. The validated gate is **forecasting-error-vs-horizon vs persistence**, on
-  which multi-domain Phase 1 beats persistence at every horizon and matches APC on transfer.
+- **The Phase 1 gate is not passed, and the substitute gate was not a bar.** The probe
+  criterion: the JEPA probes *below* the codec baseline (44.8% vs 54.7%). That is largely a
+  *readout* effect — the latent is temporally smooth (autocorr 0.67 vs 0.27) and std-pooling
+  cannot read it; routing the latent through the grounding head before pooling recovers most
+  of the gap (53.8% vs 55.0%). Two caveats on the story as first told: an *untrained* causal
+  transformer already measures 0.58 autocorr, so the smoothness is mostly architectural
+  rather than earned by the objective; and X-ARES itself was never run, only a homemade
+  ESC-50 probe. The substituted gate — "beats persistence on forecasting" — is cleared by a
+  closed-form **linear AR(4)**, against which the causal predictor is *behind* in its own
+  latent space at every horizon (−11% to −20%) and behind in codec space in-domain. The
+  forecasting eval also scored the grounding head in a space it never emitted into, which
+  manufactured the "music-trained decoder doesn't transfer" finding (sign flips once fixed)
+  — which is what the multi-domain campaign was launched to close. Re-run through the fixed
+  eval, the FMA+FSD50K checkpoint is at parity with AR(4) in codec space and −15% to −26%
+  against it in latent space, i.e. *further* behind than the FMA-only model even as its
+  persistence-relative number rose from +17% to +29%. Both defects are fixed in code; see
+  the Correction section of `RESULTS.md`. Open experiment: horizons well beyond the
+  13–107 ms tested, where linear extrapolation fails.
 - **Control axis selection (#4 / Phase 2a).** What predicts controllability is
   **loudness-decorrelation + codec-recoverability**, not the descriptor's name. The plan's
   **onset/transient** axis is *render-limited* and does NOT control (codec-recoverability R²≈0.07);
@@ -23,7 +36,11 @@ This document is the original design rationale; the body below is preserved as w
 - **The decoder is not peripheral (#1/#6/Phase 4, and the "no-decoder" novelty framing).** A
   grounding head (latent→codec decoder) was added to the core, and the *linear* render path is the
   bottleneck that blocks transient control — the render stage is central to controllability, not
-  optional.
+  optional. It also carries more weight than acknowledged: it is what makes the representation
+  recoverable under pooling, and its output space is load-bearing enough that mis-recording it
+  inverted a headline result. Untested premise behind the "nonlinear decoder" fix: whether
+  transients survive a *clean* EnCodec round-trip at all (encode true frames → decode →
+  re-extract). If they don't, the limit is the codec, not the head.
 - **Learned actions (#4b / Phase 2b).** Implemented as predictor **FiLM-conditioning, not the
   "mid-stack" VQ insertion**; and contrary to the "pretext loss worsens" expectation, the action
   makes prediction *easier* (leak risk) and the codebook **collapsed to a loudness axis**. The
@@ -31,9 +48,11 @@ This document is the original design rationale; the body below is preserved as w
 - **Data/stack divergences:** used **FSD50K** as the general set (not AudioSet, impractical to
   download); **librosa** only (not madmom/CREPE); pitch via `librosa.yin`.
 
-Still on-track as designed: continuous codec embeddings (#1), causal latent prediction (#2),
-VICReg anti-collapse (#3, holds — effective rank ~240/256), multi-domain data, and the closed-loop
-controllability methodology. Phases 3–4 and the multimodal extension are unreached future work.
+Still on-track as designed: continuous codec embeddings (#1), VICReg anti-collapse (#3, holds
+— effective rank ~226–241/256), and the closed-loop controllability methodology. Multi-domain
+data remains right for the general-audio thesis but is *not* evidence that Phase 1 works — the
+gap it was said to close was a measurement artifact. Causal latent prediction (#2) is
+implemented and does not collapse, but has not been shown to beat linear extrapolation. Phases 3–4 and the multimodal extension are unreached future work.
 
 ---
 

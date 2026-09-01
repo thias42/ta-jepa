@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .jepa import CausalTransformer, _encoder_stack, causal_mask
+from .jepa import CausalTransformer, CodecStatsMixin, _encoder_stack, causal_mask
 from .control import FiLM
 
 
@@ -84,7 +84,7 @@ class ActionPredictor(nn.Module):
         return self.head(self.film(h, action))
 
 
-class ActionJEPA(nn.Module):
+class ActionJEPA(CodecStatsMixin, nn.Module):
     def __init__(self, in_dim=128, dim=256, enc_depth=6, pred_depth=3, heads=4,
                  num_codes=16, code_dim=32, commitment_cost=0.25, dropout=0.0) -> None:
         super().__init__()
@@ -96,7 +96,8 @@ class ActionJEPA(nn.Module):
         self.inverse = InverseModel(dim, code_dim)
         self.vq = VectorQuantizer(num_codes, code_dim, commitment_cost)
         self.predictor = ActionPredictor(dim, pred_depth, heads, code_dim, dropout)
-        self.recon_head = nn.Linear(dim, in_dim)               # grounding / latent->codec
+        self.recon_head = nn.Linear(dim, in_dim)     # grounding / latent->codec
+        self._init_codec_stats(in_dim)
 
     def forward(self, x, pad_mask=None):
         z = self.encoder(x, pad_mask)
@@ -110,9 +111,6 @@ class ActionJEPA(nn.Module):
         z = self.encoder(x, pad_mask)
         q = self.vq.embedding(codes)
         return z, self.predictor(z, q, pad_mask)
-
-    def reconstruct(self, z) -> torch.Tensor:
-        return self.recon_head(z)
 
     def encode(self, x, pad_mask=None) -> torch.Tensor:
         return self.encoder(x, pad_mask)

@@ -25,6 +25,10 @@ class _FakeModel:
     def reconstruct(self, p):
         return p
 
+    def reconstruct_raw(self, p):
+        # Identity statistics: the double emits raw codec directly.
+        return p
+
 
 class _DS:
     def __init__(self, n, t, c):

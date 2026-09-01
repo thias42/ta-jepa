@@ -12,7 +12,12 @@ from .probe import (
     run_linear_probe,
     run_cv_probe,
 )
-from .forecasting import forecast_report, codec_forecast_curves, HorizonMetrics
+from .forecasting import (
+    forecast_report,
+    codec_forecast_curves,
+    fit_latent_ar,
+    HorizonMetrics,
+)
 from .controllability import controllability_matrix, disentanglement_report
 from .action_controllability import (
     action_effect_matrix,
@@ -33,6 +38,7 @@ __all__ = [
     "run_cv_probe",
     "forecast_report",
     "codec_forecast_curves",
+    "fit_latent_ar",
     "HorizonMetrics",
     "controllability_matrix",
     "disentanglement_report",

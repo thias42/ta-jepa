@@ -17,7 +17,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from .jepa import CausalTransformer, _encoder_stack, causal_mask
+from .jepa import CausalTransformer, CodecStatsMixin, _encoder_stack, causal_mask
 from .control import FiLM
 from .actions import VectorQuantizer
 
@@ -62,7 +62,7 @@ class ResidualPredictor(nn.Module):
         return self.head(h)
 
 
-class ResidualActionJEPA(nn.Module):
+class ResidualActionJEPA(CodecStatsMixin, nn.Module):
     def __init__(self, in_dim=128, dim=256, enc_depth=6, pred_depth=3, heads=4,
                  cond_dim=3, num_codes=16, code_dim=32, commitment_cost=0.25, dropout=0.0) -> None:
         super().__init__()
@@ -76,6 +76,7 @@ class ResidualActionJEPA(nn.Module):
         self.vq = VectorQuantizer(num_codes, code_dim, commitment_cost)
         self.predictor = ResidualPredictor(dim, pred_depth, heads, cond_dim, code_dim, dropout)
         self.recon_head = nn.Linear(dim, in_dim)
+        self._init_codec_stats(in_dim)
 
     def forward(self, x, desc, pad_mask=None):
         z = self.encoder(x, pad_mask)
@@ -90,9 +91,6 @@ class ResidualActionJEPA(nn.Module):
         z = self.encoder(x, pad_mask)
         q = self.vq.embedding(codes)
         return z, self.predictor(z, _next_step_delta(desc), q, pad_mask)
-
-    def reconstruct(self, z) -> torch.Tensor:
-        return self.recon_head(z)
 
     def encode(self, x, pad_mask=None) -> torch.Tensor:
         return self.encoder(x, pad_mask)

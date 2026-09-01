@@ -7,6 +7,12 @@ GitHub via requirements.txt, so this file only loads weights and wires the UI.
 Loading is Lightning-free (plain torch.load + JEPA) so the Space doesn't depend on
 pytorch-lightning's checkpoint machinery at runtime.
 
+Bundled alongside: ``examples/`` (CC0 clips, see ATTRIBUTION.md) and
+``assets/ar_latent_fma.pt`` — a linear AR(4) fitted offline in the model's own latent space
+on its training data. That AR is the reference the demo scores against, because persistence
+("assume nothing changes") is a very weak bar on temporally smooth latents. Shipping it
+pre-fitted keeps the reported skill reproducible and independent of which clips are bundled.
+
 Config via Space variables (Settings → Variables):
   MODEL_REPO  HF model repo holding the checkpoint   (default: Maeich/ta-jepa-anticipation)
   CKPT_FILE   checkpoint filename within that repo    (default: jepa_fma_grounded.ckpt)
@@ -47,11 +53,17 @@ def load_jepa(path: str):
     return jepa.eval(), target.eval()
 
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+examples = os.path.join(HERE, "examples")
+examples = examples if os.path.isdir(examples) else None
+ar_state = os.path.join(HERE, "assets", "ar_latent_fma.pt")
+ar_state = ar_state if os.path.isfile(ar_state) else None
+
 ckpt_path = hf_hub_download(MODEL_REPO, CKPT_FILE)
 jepa, target = load_jepa(ckpt_path)
 codec = build_frontend(CodecConfig(device="cpu"))           # Spaces free tier is CPU
-examples = "examples" if os.path.isdir("examples") else None
-demo = build_anticipation_demo(jepa, target, codec, max_seconds=12.0, examples=examples)
+demo = build_anticipation_demo(jepa, target, codec, max_seconds=12.0,
+                               examples=examples, ar_state=ar_state)
 
 if __name__ == "__main__":
-    demo.launch(head=HEAD_JS, allowed_paths=(["examples"] if examples else None))
+    demo.launch(head=HEAD_JS, allowed_paths=([examples] if examples else None))

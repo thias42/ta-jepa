@@ -23,18 +23,17 @@ from tajepa.config import CodecConfig, DescriptorConfig, resolve_device
 from tajepa.codec.frontend import build_frontend
 from tajepa.features.descriptors import DescriptorFrontend
 from tajepa.data.embedding_dataset import EmbeddingSequenceDataset
+from tajepa.data.stats import ensure_codec_stats
 from tajepa.eval import action_effect_matrix, action_report
-
-
-def _global_codec_stats(cache_dir: Path, n: int = 200):
-    files = sorted(Path(cache_dir).rglob("*.npy"))[:n]
-    x = torch.from_numpy(np.concatenate([np.load(f) for f in files], axis=0)).float()
-    return x.mean(0), x.std(0).clamp_min(1e-4)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ckpt", type=Path, required=True)
+    ap.add_argument("--train-stats", type=Path, nargs="+", default=None,
+                    help="Cache the model was TRAINED on. Only needed for pre-stats "
+                         "checkpoints, whose grounding head records no output space; "
+                         "without it the render is in the wrong space.")
     ap.add_argument("--features", type=Path, required=True, help="Codec cache dir.")
     ap.add_argument("--names", nargs="+", default=["loudness", "centroid", "onset"])
     ap.add_argument("--n-clips", type=int, default=40)
@@ -46,12 +45,12 @@ def main() -> None:
     from train_actions import ActionLightning
 
     model = ActionLightning.load_from_checkpoint(str(args.ckpt), map_location="cpu").model
+    ensure_codec_stats(model, args.train_stats, what=f"model {args.ckpt.name}")
     codec = build_frontend(CodecConfig(device=device))
-    mean, std = (t.to(device) for t in _global_codec_stats(args.features))
     desc_fe = DescriptorFrontend(DescriptorConfig(names=tuple(args.names)))
 
-    def render_fn(std_codec):
-        return codec.decode(std_codec * std + mean)
+    def render_fn(raw_codec):    # [B,T,Dc] raw codec -> audio [B,1,N]
+        return codec.decode(raw_codec)
 
     def desc_fn(audio):
         return desc_fe.encode(audio.detach().cpu())

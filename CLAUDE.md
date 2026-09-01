@@ -129,7 +129,8 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
 - `src/tajepa/codec/` — frozen codec frontend (`EncodecFrontend`, registry) + offline
   embedding caching (`extract.py`). **Continuous pre-quantizer embeddings only.**
 - `src/tajepa/features/mel.py` — log-mel frontend for the A-JEPA-comparable baseline.
-- `src/tajepa/models/apc.py` — APC baseline + `persistence_l1` (the bar Phase 1 must beat).
+- `src/tajepa/models/apc.py` — APC baseline + `persistence_l1` (a sanity floor only —
+  the actual bar is `LinearAR`, below).
 - `src/tajepa/models/ajepa.py` — A-JEPA mel baseline: masked latent prediction over
   spectrogram patches with an EMA target. Bidirectional, EMA+stop-grad only (NO VICReg —
   that's reserved for the causal JEPA). `train_ajepa.py` owns the EMA target + momentum
@@ -137,8 +138,15 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
 - `src/tajepa/models/jepa.py` — **Phase 1 core**: causal frame encoder `f_θ` + EMA target
   `f_θ̄` + causal multi-offset predictor `g_φ`; loss = latent smooth-L1 vs stop-grad EMA
   target **+ VICReg variance/covariance** (mandatory anti-collapse, invariant #3).
-  `train_jepa.py` owns the EMA target + momentum schedule and logs the forward-prediction
-  L1 vs persistence (the gate). Probe via `JEPARepresentation` on cached codec embeddings.
+  `train_jepa.py` owns the EMA target + momentum schedule, records the codec statistics on
+  the model (`set_codec_stats`), and logs the forward-prediction L1. Probe via
+  `JEPARepresentation` on cached codec embeddings.
+- `src/tajepa/models/linear_ar.py` — **`LinearAR`, the forecasting floor.** Closed-form ridge
+  AR(p) on the last `p` frames. Persistence (`x[t+k] := x[t]`) is retired as a bar: it is
+  cleared trivially on smooth codec embeddings, and AR(4) reproduces (and in latent space
+  exceeds) the causal JEPA's entire reported gain over it. Fit on the **training** cache so
+  transfer evals stay matched.
+- `src/tajepa/data/stats.py` — the one source of truth for codec standardization.
 - `src/tajepa/extract.py` — generic feature-cache core; `codec/extract.py` (codec) and
   `extract_mel.py` (log-mel) both delegate to it.
 - `src/tajepa/features/descriptors.py` + `src/tajepa/models/control.py` — **Phase 2a control**:
@@ -190,6 +198,15 @@ so cloud == local code. Setup + commands: `docs/cloud-modal.md`. Cloud deps: `pi
 
 - Cache codec embeddings offline (`extract_embeddings.py`) so the model side iterates fast.
 - Keep collapse diagnostics (`diagnostics.py`) wired into every training run.
+- **Never report forecasting skill against persistence alone** — always against `LinearAR`
+  (`--ar-order`, default 4). A result that only beats persistence is not a result.
+- **The grounding head emits into a recorded space.** `grounding_loss` requires explicit
+  `mean`/`std`; training computes them once via `data.stats.codec_stats` and stores them on
+  the model, so they travel in the checkpoint. Anything consuming the head's output must use
+  `reconstruct_raw` — never re-derive statistics at the point of use. Scoring the head
+  against eval-set statistics once flipped a headline forecasting result from +0.08 to −0.07
+  and produced a "decoder doesn't transfer" finding that did not exist. Pre-stats
+  checkpoints load but warn; pass `--train-cache` / `--train-stats`.
 - Default codec is **EnCodec 24 kHz** (causal-friendly, 75 Hz, HF-native); the frontend is a
   registry so DAC drops in behind the same interface.
 - Synthetic data (`make_synthetic_data.py`) is for pipeline smoke-testing ONLY — never for

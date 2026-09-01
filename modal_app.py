@@ -23,7 +23,7 @@ Usage:
   modal run modal_app.py::train    --model jepa --dataset fma_small \
         --save-name jepa_fma --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 --max-steps 25000"
   modal run modal_app.py::evaluate --eval-kind forecast --dataset esc50 \
-        --jepa-ckpt jepa_fma --apc-ckpt apc_fma
+        --train-datasets fma_small,fsd50k --jepa-ckpt jepa_fma --apc-ckpt apc_fma
 """
 
 from __future__ import annotations
@@ -325,12 +325,25 @@ def action_eval(dataset: str, ckpt: str, extra_args: str = "") -> None:
 @app.function(image=image, secrets=[r2_secret], gpu=EVAL_GPU, timeout=2 * 3600)
 def evaluate(
     eval_kind: str, dataset: str, frontend: str = "encodec_24khz",
-    jepa_ckpt: str = "", apc_ckpt: str = "", extra_args: str = "",
+    jepa_ckpt: str = "", apc_ckpt: str = "", train_datasets: str = "",
+    extra_args: str = "",
 ) -> None:
-    """Run ``forecast`` or ``probe`` on a cached dataset + checkpoint(s) from R2."""
+    """Run ``forecast`` or ``probe`` on a cached dataset + checkpoint(s) from R2.
+
+    ``train_datasets`` is a comma-separated list of the datasets the checkpoints were
+    *trained* on (e.g. ``"fma_small,fsd50k"``). Forecasting needs it: the linear-AR floor
+    is fit there so transfer stays matched, and pre-stats checkpoints recover the codec
+    statistics their grounding head emits into. Without it the AR falls back to the eval
+    set and pre-stats checkpoints are scored in a space they never emitted into.
+    """
     cache_dir = _download_tar(f"cache/{frontend}/{dataset}.tar", f"{SCRATCH}/cache/{frontend}")
     manifest = f"{SCRATCH}/manifests/{dataset}.jsonl"
     _download(f"manifests/{dataset}.jsonl", manifest)
+
+    train_dirs = [
+        _download_tar(f"cache/{frontend}/{d.strip()}.tar", f"{SCRATCH}/cache/{frontend}")
+        for d in train_datasets.split(",") if d.strip()
+    ]
 
     ckpt_args = []
     for name, kind in ((jepa_ckpt, "jepa"), (apc_ckpt, "apc")):
@@ -340,8 +353,10 @@ def evaluate(
             ckpt_args += [f"--{kind}-ckpt", local]
 
     if eval_kind == "forecast":
+        train_args = ["--train-cache", *train_dirs] if train_dirs else []
         cmd = ["python", f"{REPO}/scripts/run_forecast.py",
-               "--manifest", manifest, "--cache", cache_dir, *ckpt_args, *shlex.split(extra_args)]
+               "--manifest", manifest, "--cache", cache_dir, *ckpt_args, *train_args,
+               *shlex.split(extra_args)]
     elif eval_kind == "probe":
         cmd = ["python", f"{REPO}/scripts/run_probe.py",
                "--manifest", manifest, "--cache", cache_dir, *ckpt_args, *shlex.split(extra_args)]

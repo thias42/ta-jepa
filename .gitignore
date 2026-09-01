@@ -71,6 +71,13 @@ checkpoints/
 
 # Track small example/fixture assets explicitly with: git add -f path/to/file
 
+# ---- HF Space assets (must ship; the blanket *.flac / *.pt rules above would drop them) ----
+# space/anticipation/ IS the deployed Space. Its bundled example clips and the pre-fitted
+# linear-AR reference have to be tracked, or the Space deploys without them and silently
+# falls back to reporting only the weak persistence baseline.
+!space/anticipation/examples/*.flac
+!space/anticipation/assets/*.pt
+
 # ---- Config / secrets ----
 .env
 .env.*

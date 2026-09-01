@@ -60,8 +60,18 @@ CLI equivalents exist (`hf repo create … --repo-type space --space-sdk gradio`
 
 ## Notes
 
-- **Examples:** drop a few short audio clips into `space/anticipation/examples/` before
-  step 2 to get one-click example clips (none bundled by default — mind clip licensing).
+- **Examples:** eight clips are bundled in `space/anticipation/examples/` — ESC-50 sources
+  that are individually **CC0**, so the Space carries no attribution or non-commercial
+  obligation; credits are in `space/anticipation/ATTRIBUTION.md` anyway. Add your own by
+  dropping files in the same folder (mind their licensing).
+- **The AR reference:** `space/anticipation/assets/ar_latent_fma.pt` is a linear AR(4)
+  fitted offline in the checkpoint's latent space on its training data (FMA). The demo
+  scores against it because persistence is a weak bar; shipping it pre-fitted keeps the
+  number reproducible. Regenerate with `tajepa.eval.fit_latent_ar` + `LinearAR.save` if you
+  change checkpoints — an AR fitted for one checkpoint is meaningless for another.
+- **Push order matters:** the Space installs `tajepa[demo]` from GitHub `main`, and
+  `app.py` now calls `build_anticipation_demo(..., ar_state=...)`. Push GitHub **before**
+  the Space, or a rebuild will hit an older package without that argument.
 - **Config:** the Space reads `MODEL_REPO` / `CKPT_FILE` Space variables (Settings →
   Variables) if you host the checkpoint elsewhere.
 - **GitHub must be public** for the Space's `pip install … git+https://github.com/...` to

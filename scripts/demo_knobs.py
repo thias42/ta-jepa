@@ -38,6 +38,7 @@ from tajepa.config import CodecConfig, DescriptorConfig, resolve_device
 from tajepa.codec.frontend import build_frontend
 from tajepa.features.descriptors import DescriptorFrontend
 from tajepa.data.io import load_resampled
+from tajepa.data.stats import ensure_codec_stats
 
 # Friendly slider labels per descriptor. The "+"/"−" hints describe what bumping the
 # standardized delta upward does. Bracketed caveats are honest about the weak/dead axes.
@@ -72,6 +73,7 @@ def build_demo(args):
 
     lit = ControlLightning.load_from_checkpoint(str(args.ckpt), map_location="cpu")
     model = lit.model.eval().to(device)
+    ensure_codec_stats(model, args.train_stats, what=f"model {args.ckpt.name}")
 
     names = list(args.names)
     if len(names) != int(model.cond_dim):
@@ -114,30 +116,31 @@ def build_demo(args):
         x, desc = x[:, :t], desc[:, :t]
         flat = desc.reshape(-1, desc.shape[-1])
         ctrl = (desc - flat.mean(0)) / flat.std(0).clamp_min(1e-4)   # per-clip z-score
-        xf = x.reshape(-1, x.shape[-1])
-        mu, sd = xf.mean(0), xf.std(0).clamp_min(1e-4)         # un-standardization stats
         roundtrip = codec.decode(x).squeeze().detach().cpu().numpy()  # raw -> audio
-        out = (x, ctrl, mu, sd, roundtrip)
+        out = (x, ctrl, roundtrip)
         _cache[key] = out
         return out
 
     @torch.no_grad()
-    def _render(x, ctrl, mu, sd, bumps: dict[str, float]) -> np.ndarray:
+    def _render(x, ctrl, bumps: dict[str, float]) -> np.ndarray:
         base = model.deltas_from(ctrl)
         deltas = {o: base[o].clone() for o in base}
         for name, val in bumps.items():
             deltas[offset][..., names.index(name)] += float(val)
         _, preds = model.predict_with_deltas(x, deltas, desc=ctrl)
-        emb = model.reconstruct(preds[offset]) * sd + mu       # un-standardize grounded latent
+        # reconstruct_raw un-standardizes with the statistics recorded on the model — the
+        # space its grounding head was actually trained to emit. Deriving them from the clip
+        # (as this once did) renders the prediction in the wrong space.
+        emb = model.reconstruct_raw(preds[offset])
         return codec.decode(emb).squeeze().detach().cpu().numpy()
 
     def run(path, *slider_vals):
         if not path:
             return None, None, None
-        x, ctrl, mu, sd, roundtrip = _ingest(path)
+        x, ctrl, roundtrip = _ingest(path)
         bumps = {n: v for n, v in zip(visible, slider_vals)}   # hidden names left at 0 (unsteered)
-        baseline = _render(x, ctrl, mu, sd, {})
-        steered = _render(x, ctrl, mu, sd, bumps)
+        baseline = _render(x, ctrl, {})
+        steered = _render(x, ctrl, bumps)
         roundtrip, baseline, steered = _peak_norm(roundtrip, baseline, steered)
         return (sr, roundtrip), (sr, baseline), (sr, steered)
 
@@ -176,6 +179,10 @@ def build_demo(args):
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ckpt", type=Path, required=True, help="Phase 2a control checkpoint.")
+    ap.add_argument("--train-stats", type=Path, nargs="+", default=None,
+                    help="Cache the model was TRAINED on. Only needed for pre-stats "
+                         "checkpoints, whose grounding head records no output space; "
+                         "without it the render is in the wrong space.")
     ap.add_argument("--names", nargs="+", default=["loudness", "centroid", "harmonic_ratio"],
                     help="Descriptors the checkpoint was trained on (order matters).")
     ap.add_argument("--hidden-names", nargs="+", default=None,

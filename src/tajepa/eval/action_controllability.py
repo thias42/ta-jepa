@@ -27,7 +27,7 @@ from ..config import resolve_device
 def action_effect_matrix(
     model: torch.nn.Module,
     dataset,
-    render_fn,                # std_codec [B,T,Dc] -> audio [B,1,N]
+    render_fn,                # raw codec [B,T,Dc] -> audio [B,1,N]
     desc_fn,                  # audio -> descriptors [B,T,C]
     n_clips: int = 40,
     device: str | None = None,
@@ -40,7 +40,7 @@ def action_effect_matrix(
     usage = torch.zeros(k)
 
     def desc_of(pred):
-        return desc_fn(render_fn(model.reconstruct(pred))).mean(dim=1)[0].cpu()  # [C]
+        return desc_fn(render_fn(model.reconstruct_raw(pred))).mean(dim=1)[0].cpu()  # [C]
 
     n = min(n_clips, len(dataset))
     for idx in range(n):
@@ -79,7 +79,7 @@ def residual_action_effect_matrix(
     usage = torch.zeros(k)
 
     def desc_of(pred):
-        return desc_fn(render_fn(model.reconstruct(pred))).mean(dim=1)[0].cpu()
+        return desc_fn(render_fn(model.reconstruct_raw(pred))).mean(dim=1)[0].cpu()
 
     n = min(n_clips, len(dataset))
     for idx in range(n):

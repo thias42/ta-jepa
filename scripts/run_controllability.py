@@ -24,19 +24,17 @@ from tajepa.config import CodecConfig, DescriptorConfig, resolve_device
 from tajepa.codec.frontend import build_frontend
 from tajepa.features.descriptors import DescriptorFrontend
 from tajepa.data.embedding_dataset import PairedSequenceDataset
+from tajepa.data.stats import ensure_codec_stats
 from tajepa.eval import controllability_matrix, disentanglement_report
-
-
-def _global_codec_stats(cache_dir: Path, n: int = 200) -> tuple[torch.Tensor, torch.Tensor]:
-    files = sorted(Path(cache_dir).rglob("*.npy"))[:n]
-    arr = np.concatenate([np.load(f) for f in files], axis=0)
-    x = torch.from_numpy(arr).float()
-    return x.mean(0), x.std(0).clamp_min(1e-4)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ckpt", type=Path, required=True)
+    ap.add_argument("--train-stats", type=Path, nargs="+", default=None,
+                    help="Cache the model was TRAINED on. Only needed for pre-stats "
+                         "checkpoints, whose grounding head records no output space; "
+                         "without it the render is in the wrong space.")
     ap.add_argument("--features", type=Path, required=True, help="Codec cache dir.")
     ap.add_argument("--control", type=Path, required=True, help="Descriptor cache dir.")
     ap.add_argument("--names", nargs="+", default=["loudness", "centroid", "onset"])
@@ -52,14 +50,13 @@ def main() -> None:
 
     lit = ControlLightning.load_from_checkpoint(str(args.ckpt), map_location="cpu")
     model = lit.model
+    ensure_codec_stats(model, args.train_stats, what=f"model {args.ckpt.name}")
 
     codec = build_frontend(CodecConfig(device=device))
-    mean, std = _global_codec_stats(args.features)
-    mean, std = mean.to(device), std.to(device)
     desc_fe = DescriptorFrontend(DescriptorConfig(names=tuple(args.names)))
 
-    def render_fn(std_codec: torch.Tensor) -> torch.Tensor:    # [B,T,Dc] -> audio [B,1,N]
-        return codec.decode(std_codec * std + mean)
+    def render_fn(raw_codec: torch.Tensor) -> torch.Tensor:    # [B,T,Dc] -> audio [B,1,N]
+        return codec.decode(raw_codec)
 
     def desc_fn(audio: torch.Tensor) -> torch.Tensor:           # audio -> [B,T,C] (on cpu)
         return desc_fe.encode(audio.detach().cpu())

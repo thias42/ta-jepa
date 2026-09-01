@@ -27,8 +27,15 @@ import torch
 from torch.utils.data import DataLoader
 
 from tajepa.data.embedding_dataset import EmbeddingSequenceDataset, pad_collate
+from tajepa.data.stats import codec_stats
 from tajepa.diagnostics import collapse_report
-from tajepa.models.jepa import JEPA, jepa_loss, grounding_loss, latent_persistence_l1
+from tajepa.models.jepa import (
+    JEPA,
+    backfill_codec_stats,
+    grounding_loss,
+    jepa_loss,
+    latent_persistence_l1,
+)
 from tajepa.utils import seed_everything
 
 
@@ -58,6 +65,12 @@ class JEPALightning(pl.LightningModule):
         for c, t in zip(self.jepa.encoder.parameters(), self.target.parameters()):
             t.mul_(m).add_(c.detach(), alpha=1 - m)
 
+    def on_load_checkpoint(self, checkpoint) -> None:
+        """Let checkpoints written before codec statistics existed still load. They carry
+        no record of the grounding head's output space, so callers must supply it
+        (``--train-stats`` / ``ensure_codec_stats``) before trusting codec-space results."""
+        backfill_codec_stats(checkpoint["state_dict"], "jepa.", self.hparams.in_dim)
+
     def training_step(self, batch, _):
         x, pad = batch["features"], batch["pad_mask"]
         z, preds = self.jepa(x, pad)
@@ -67,7 +80,8 @@ class JEPALightning(pl.LightningModule):
         loss, logs = jepa_loss(preds, z, z_tgt, pad,
                                var_coef=self.hparams.var_coef, cov_coef=self.hparams.cov_coef)
         if self.hparams.grounding_coef > 0:
-            recon_loss = grounding_loss(self.jepa.reconstruct(z), x, pad)
+            recon_loss = grounding_loss(self.jepa.reconstruct(z), x, pad,
+                                        mean=self.jepa.codec_mean, std=self.jepa.codec_std)
             loss = loss + self.hparams.grounding_coef * recon_loss
             self.log("train/recon_loss", float(recon_loss.detach()))
 
@@ -136,6 +150,11 @@ def main() -> None:
         max_steps=args.max_steps, accelerator=args.accelerator, log_every_n_steps=10,
         enable_checkpointing=False, default_root_dir="lightning_logs/jepa",
     )
+    # Record the codec standardization the grounding head emits into, so it is
+    # saved with the checkpoint and every consumer scores in the same space.
+    mean, std = codec_stats(args.cache)
+    model.jepa.set_codec_stats(mean, std)
+
     trainer.fit(model, loader)
 
     if args.save:

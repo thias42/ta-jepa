@@ -1,11 +1,16 @@
 """Anticipation demo — the V-JEPA-style, decoder-free showcase of the causal JEPA.
 
 From past context only, the causal model predicts the near future of audio *in latent
-space*; this builds a Gradio UI that plots its per-frame prediction error against a
-persistence baseline under a spectrogram, marks the surprising frames, and reports
-forecasting skill (``1 − model/persistence``). A playhead sweeps both panels in time with
-the audio. Nothing here touches the codec decoder — the claim is made in representation
-space, the same discipline as V-JEPA.
+space*; this builds a Gradio UI that plots its per-frame prediction error against
+reference predictors under a spectrogram, marks the surprising frames, and reports
+forecasting skill. A playhead sweeps both panels in time with the audio. Nothing here
+touches the codec decoder — the claim is made in representation space, the same
+discipline as V-JEPA.
+
+Two references are shown. **Persistence** ("next = now") is the intuitive one, but it is a
+very weak bar on temporally smooth latents. The honest bar is a **linear AR(p)** fit in
+closed form on the same latents (``ar_corpus``): the causal predictor has to beat *that*
+for "it learned dynamics" to mean anything. Both skills are reported; the AR one counts.
 
 ``build_anticipation_demo`` takes already-constructed ``jepa`` / ``target`` (EMA encoder) /
 ``codec`` so it is agnostic to *how* the checkpoint was loaded — the local CLI
@@ -90,11 +95,26 @@ def _mel_db(y: np.ndarray, sr: int, hop: int) -> np.ndarray:
 
 
 def build_anticipation_demo(jepa, target, codec, *, max_seconds: float = 12.0,
-                            examples: str | Path | None = None):
+                            examples: str | Path | None = None,
+                            ar_state: str | Path | None = None,
+                            ar_corpus: str | Path | None = None, ar_order: int = 4):
     """Build (but don't launch) the anticipation Gradio ``Blocks``.
 
     ``jepa`` / ``target`` should already be in eval mode; all three of ``jepa`` / ``target``
     / ``codec`` should be on the same device. Launch with ``demo.launch(head=HEAD_JS, ...)``.
+
+The linear-AR reference comes from one of two places, in order of preference:
+
+    * ``ar_state`` — a ``LinearAR`` fitted offline on the model's *training* distribution
+      and saved with ``LinearAR.save``. This is the right way: the reference matches the
+      one the reported numbers use, costs nothing at startup, and does not depend on which
+      clips happen to be bundled.
+    * ``ar_corpus`` — a directory of audio to fit from at startup (defaults to
+      ``examples``). A fallback. Prefer a corpus disjoint from the clips being analyzed:
+      fitting the AR on the very clip under analysis flatters it, badly on periodic signals.
+
+    With neither, the AR curve is omitted and only the weak persistence skill is reported,
+    clearly labelled as such.
     """
     import gradio as gr
     import matplotlib
@@ -109,6 +129,28 @@ def build_anticipation_demo(jepa, target, codec, *, max_seconds: float = 12.0,
     sr = int(codec.sample_rate)
     hop = max(1, round(sr / codec.frame_rate))       # samples per codec frame (≈320 @ 24k/75)
     _cache: dict = {}
+
+    @torch.no_grad()
+    def _fit_latent_ar():
+        """Closed-form AR(p) on target latents — the reference the model must actually beat."""
+        from ..models.linear_ar import LinearAR
+
+        if ar_state:
+            return LinearAR.load(ar_state).eval()
+        root = Path(ar_corpus or examples) if (ar_corpus or examples) else None
+        clips = sorted(p for p in root.glob("*") if p.suffix.lower() in
+                       {".wav", ".flac", ".ogg", ".mp3"}) if root else []
+        if not clips:
+            return None
+        seqs = []
+        for c in clips:
+            wav = load_resampled(str(c), sr, mono=True)[:, : int(max_seconds * sr)]
+            seqs.append(target(codec.encode(wav.unsqueeze(0).to(device)).to(device)).cpu())
+        dim = seqs[0].shape[-1]
+        return LinearAR(dim, order=ar_order, offsets=offsets).fit(seqs)
+
+    _ar = _fit_latent_ar()
+    _ar_p = _ar.order if _ar is not None else ar_order
 
     @torch.no_grad()
     def _ingest(path: str):
@@ -128,12 +170,16 @@ def build_anticipation_demo(jepa, target, codec, *, max_seconds: float = 12.0,
         return out
 
     def _curves(preds, z_tgt, k: int):
-        """Per-frame model vs persistence latent error, aligned to event time τ = k..T-1."""
+        """Per-frame model / persistence / AR latent error, aligned to event time τ = k..T-1."""
         T = z_tgt.shape[1]
         model = (preds[k][:, : T - k] - z_tgt[:, k:]).abs().mean(-1).squeeze(0)   # [T-k]
         persist = (z_tgt[:, k:] - z_tgt[:, : T - k]).abs().mean(-1).squeeze(0)    # [T-k]
+        ar = None
+        if _ar is not None:
+            p = _ar(z_tgt.cpu())[k].to(z_tgt)[:, : T - k]
+            ar = (p - z_tgt[:, k:]).abs().mean(-1).squeeze(0).cpu().numpy()
         t = np.arange(k, T) / codec.frame_rate
-        return t, model.cpu().numpy(), persist.cpu().numpy()
+        return t, model.cpu().numpy(), persist.cpu().numpy(), ar
 
     def analyze(path, k):
         if not path:
@@ -142,9 +188,11 @@ def build_anticipation_demo(jepa, target, codec, *, max_seconds: float = 12.0,
         y, preds, z_tgt, mel, T = _ingest(path)
         if T <= k + 1:
             return "", f"Clip too short for horizon k={k}."
-        t, model, persist = _curves(preds, z_tgt, k)
+        t, model, persist, ar = _curves(preds, z_tgt, k)
         dur = len(y) / sr
         skill = 1.0 - float(model.mean()) / max(float(persist.mean()), 1e-8)
+        ar_skill = (1.0 - float(model.mean()) / max(float(ar.mean()), 1e-8)
+                    if ar is not None else None)
 
         # top surprise peaks (prominent local maxima of the model error)
         prom = (model.max() - model.min()) * 0.15 + 1e-9
@@ -156,12 +204,18 @@ def build_anticipation_demo(jepa, target, codec, *, max_seconds: float = 12.0,
         ax1.imshow(mel, origin="lower", aspect="auto", extent=[0, dur, 0, mel.shape[0]],
                    cmap="magma")
         ax1.set_ylabel("mel bin")
-        ax1.set_title(f"Anticipation — horizon k={k} ({k / codec.frame_rate * 1000:.0f} ms ahead)"
-                      f"   ·   forecasting skill vs persistence: {skill:+.1%}")
+        title = (f"Anticipation — horizon k={k} ({k / codec.frame_rate * 1000:.0f} ms ahead)"
+                 f"   ·   skill vs persistence: {skill:+.1%}")
+        if ar_skill is not None:
+            title += f"   ·   vs linear AR({_ar_p}): {ar_skill:+.1%}"
+        ax1.set_title(title)
         for p in peaks:
             ax1.axvline(t[p], color="cyan", lw=1.0, alpha=0.7)
 
         ax2.plot(t, persist, color="gray", lw=1.2, label="persistence (next = now)")
+        if ar is not None:
+            ax2.plot(t, ar, color="tab:blue", lw=1.2, ls="--",
+                     label=f"linear AR({_ar_p}) — the real bar")
         ax2.plot(t, model, color="crimson", lw=1.4, label="model prediction error")
         ax2.fill_between(t, model, persist, where=(persist >= model), color="crimson",
                          alpha=0.12, interpolate=True)
@@ -172,9 +226,14 @@ def build_anticipation_demo(jepa, target, codec, *, max_seconds: float = 12.0,
         # playhead assumes
         fig.subplots_adjust(left=_AX_LEFT, right=_AX_RIGHT, top=0.92, bottom=0.11, hspace=0.07)
 
-        msg = (f"**Forecasting skill:** {skill:+.1%}  (1 − model/persistence error; >0 means it "
-               f"beats *assume-nothing-changes*).  **Surprise peaks** (cyan) mark the frames the "
-               f"model found least predictable from the past — press play and watch the playhead.")
+        msg = (f"**Skill vs persistence:** {skill:+.1%} — beats *assume-nothing-changes*, which "
+               f"is an easy bar on smooth latents.")
+        if ar_skill is not None:
+            msg += (f"  **Skill vs linear AR({_ar_p}):** {ar_skill:+.1%} — the bar that counts: "
+                    f"a closed-form linear fit on the last {_ar_p} latents, no training. "
+                    f"Negative means the trained predictor does not beat it.")
+        msg += ("  **Surprise peaks** (cyan) mark the frames the model found least predictable "
+                "from the past — press play and watch the playhead.")
         html = _player_html(fig, y, sr)
         plt.close(fig)
         return html, msg
@@ -184,9 +243,10 @@ def build_anticipation_demo(jepa, target, codec, *, max_seconds: float = 12.0,
             "# ta-jepa — anticipation\n"
             "A causal audio **world model**: from past context only, it predicts the near "
             "future of the sound *in latent space* (never decoding audio — the same discipline "
-            "as V-JEPA). The plot shows its per-frame prediction error vs a **persistence** "
-            "baseline. Where the red curve dips below gray, the model is anticipating change "
-            "that 'assume nothing changes' can't; **spikes** mark surprising events. Press "
+            "as V-JEPA). The plot shows its per-frame prediction error against two "
+            "references: **persistence** (gray, 'assume nothing changes') and a **linear AR** "
+            "fit (blue dashed). Persistence is an easy bar on smooth latents — the AR curve "
+            "is the one that counts. **Spikes** mark surprising events. Press "
             "play and the cyan **playhead** sweeps both panels in time with the audio."
         )
         with gr.Row():

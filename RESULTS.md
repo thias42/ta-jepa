@@ -41,7 +41,17 @@ predictor, not a bug. The quiz just happens to grade on jumpiness.
 scene-to-scene cuts. The student isn't worse — the quiz measures the wrong thing. So rather
 than dumbing the model down to win a flawed quiz, the right move is to **build a better
 test** — one that measures what a world model is actually for: predicting and (later)
-controlling sound over time. That's the current decision.
+controlling sound over time.
+
+**But the better test was graded too easily (later correction).** We first scored the
+model against "assume nothing changes", which it beat comfortably. That opponent turns out
+to be far too weak: a *straight-line-style* prediction from the last four moments — no
+learning at all, solvable with school algebra — does just as well, and in the model's own
+internal space does **better** than the trained model. So the honest current status is:
+the model predicts the near future better than the naive opponent, but **not** better than
+a trivial one. The forecasting claim does not yet stand, and the fix isn't a better
+opponent — it's showing the model can do something the trivial predictor can't, which
+means looking further ahead than the ~0.1 s tested so far. See the Correction section.
 
 ## Setup
 
@@ -158,7 +168,113 @@ direction is to **build evaluations that measure what a world model is actually 
 Until such evals exist, "below the codec baseline on meanstd-ESC-50" is noted but **not**
 treated as the verdict on Phase 1.
 
+## Correction — the forecasting evaluation was measuring two wrong things
+
+Everything below under "Forecasting-error-vs-horizon" was produced by an evaluation with
+two defects. Both are now fixed in code (`eval/forecasting.py`, `models/linear_ar.py`,
+`data/stats.py`); the corrected numbers are here, and the affected sections below are
+marked but preserved as written.
+
+### Defect 1 — the grounding head was scored in a space it never emitted into
+
+`grounding_loss` standardized its target with *per-batch* statistics, so `recon_head`
+learned to emit frames in an implicit, training-set-dependent space. The eval then
+standardized the *target* with the **eval set's** statistics. On a transfer set the two
+disagree, and the whole mismatch was charged to the model — persistence was unaffected,
+because both its sides live in one space.
+
+Same checkpoint (`jepa_fma_grounded`), same ESC-50 clips, same metric; only the
+statistics change:
+
+| k | scored with ESC-50 stats (old path) | scored in the head's own (FMA) space |
+|---|---|---|
+| 1 | −0.069 | **+0.079** |
+| 2 | −0.068 | **+0.085** |
+| 4 | −0.065 | **+0.091** |
+| 8 | −0.064 | **+0.087** |
+
+The sign flips. **"The music-trained decoder doesn't generalize to environmental sound"
+was a measurement artifact, not a finding** — and it is what motivated the multi-domain
+training campaign. Multi-domain data is worth having on its own merits (it is the plan's
+intent), but it was not fixing what it was said to fix, and part of the reported
+improvement is the artifact shrinking: FSD50K is statistically far closer to ESC-50 than
+FMA is, so the multi-domain model's mismatch was smaller by construction. The `FMA+FSD50K`
+checkpoint has now been re-run through the fixed eval — see "The multi-domain checkpoint,
+re-run through the fixed eval" below. Short version: against AR(4) it is at parity in codec
+space and further behind in latent space than the FMA-only model, so the campaign's stated
+purpose does not survive.
+
+*Fix:* codec statistics are computed once from the training cache, recorded on the model
+as buffers (`set_codec_stats`), and saved in the checkpoint. Forecasts are produced in raw
+codec space via `reconstruct_raw` and every predictor is standardized alike, so the choice
+of eval statistics can no longer favour or penalize anyone. `grounding_loss` now *requires*
+explicit statistics. Pre-stats checkpoints still load, but warn, and need `--train-cache`.
+
+### Defect 2 — persistence is not a bar
+
+`x[t+k] := x[t]` uses one frame and no fitting. On locally smooth codec embeddings that is
+trivially weak, so "beats persistence" — the criterion Phase 1 was re-gated on after the
+probe failed — certifies almost nothing. A ridge **AR(4)** on the last four frames, fit in
+closed form on FMA (the models' own training data, so transfer stays matched), is the
+honest floor.
+
+**ESC-50 (transfer)** — cosine of predicted vs true future codec frame, gain over AR(4):
+
+| k | persistence | **AR(4)** | APC | JEPA |
+|---|---|---|---|---|
+| 1 | 0.653 | **0.724** | 0.735 (+0.011) | 0.732 (+0.008) |
+| 2 | 0.625 | **0.709** | — | 0.710 (+0.001) |
+| 3 | 0.619 | **0.704** | 0.708 (+0.004) | — |
+| 4 | 0.609 | **0.696** | — | 0.699 (+0.004) |
+| 5 | 0.604 | **0.691** | 0.699 (+0.008) | — |
+| 8 | 0.597 | **0.675** | — | 0.684 (+0.009) |
+
+**FMA (in-domain)** — same:
+
+| k | persistence | **AR(4)** | APC | JEPA |
+|---|---|---|---|---|
+| 1 | 0.388 | **0.550** | 0.553 (+0.003) | 0.512 (**−0.038**) |
+| 2 | 0.331 | **0.484** | — | 0.449 (**−0.035**) |
+| 3 | 0.302 | **0.448** | 0.448 (−0.001) | — |
+| 4 | 0.285 | **0.423** | — | 0.402 (**−0.020**) |
+| 5 | 0.261 | **0.404** | 0.410 (+0.006) | — |
+| 8 | 0.232 | **0.371** | — | 0.366 (−0.005) |
+
+**Latent space** (the model's own), skill against each reference:
+
+| | k=1 | k=2 | k=4 | k=8 |
+|---|---|---|---|---|
+| ESC-50, vs latent-persistence | +16.6% | +34.4% | +45.1% | +41.5% |
+| ESC-50, **vs latent AR(4)** | **−17.0%** | **−10.9%** | **−11.4%** | **−12.2%** |
+| FMA, vs latent-persistence | +12.2% | +23.0% | +31.6% | +29.4% |
+| FMA, **vs latent AR(4)** | **−20.9%** | **−17.3%** | **−18.3%** | **−19.4%** |
+
+What this actually says:
+
+- **The headline latent skill (+17–45%) does not survive the change of floor — it inverts.**
+  In its own latent space the trained causal predictor is *worse* than a closed-form linear
+  fit on the last four EMA-target latents, at every horizon, in both domains. (The AR reads
+  target latents, the predictor maps online→target; that is the model's own design, and the
+  predictor sees strictly more context.)
+- **In codec space, in-domain, the JEPA is behind AR(4)** at every horizon (−0.005 to
+  −0.038), and APC is at parity. On ESC-50 transfer both edge past it, by +0.001–0.011 —
+  about a tenth of the gain each claimed over persistence.
+- **Persistence flattered everyone, and most in-domain**, where AR(4) beats it by +0.16
+  cosine versus +0.07 on ESC-50 — music is far less locally smooth than environmental sound.
+- The ESC-50 transfer numbers *are* positive, which is Defect 1's correction: the FMA-only
+  model never had the transfer failure it was reported to have.
+
+**Consequence for the gate.** Phase 1 was re-gated on "beats persistence on forecasting"
+after failing the X-ARES/probe criterion. That replacement bar is cleared by a linear model
+with no training, so it does not license the conclusion drawn from it. Against a floor that
+does mean something, the causal JEPA does not currently beat trivial linear extrapolation
+of its own latents. This is a Phase 1 finding, not a Phase 2 one — and the horizons here
+(k=1–8, i.e. 13–107 ms) are short enough that local continuation explains the task; a sweep
+to horizons where AR(4) actually fails is the outstanding experiment.
+
 ## Forecasting-error-vs-horizon (world-model evaluation)
+
+> **Superseded — see "Correction — the forecasting evaluation was measuring two wrong things" above.** The numbers in this section come from the pre-fix eval: model forecasts were scored against the eval set's statistics rather than the space the grounding head emits into, and skill is reported against persistence rather than a linear-AR floor.
 
 The first of the better evals (`src/tajepa/eval/forecasting.py`, `scripts/run_forecast.py`).
 It asks the question a *world model* is actually for: **does it predict the future of the
@@ -201,6 +317,8 @@ and nearly unpredictable anyway, which is the whole reason we predict the smooth
 instead.
 
 ### Cross-model curves — persistence vs APC vs JEPA (codec space)
+
+> **Superseded — see "Correction — the forecasting evaluation was measuring two wrong things" above.** The numbers in this section come from the pre-fix eval: model forecasts were scored against the eval set's statistics rather than the space the grounding head emits into, and skill is reported against persistence rather than a linear-AR floor.
 
 `codec_forecast_curves` puts all three on the same axes (globally-standardized codec space,
 so they're directly comparable; cosine of predicted vs true future frame). APC predicts
@@ -247,7 +365,15 @@ JEPA latent-space skill (own space): ESC-50 +17/+34/+45/+41%, FMA +13/+23/+32/+3
    (decoder/data) are **two different issues** — and on the forecasting metric, in-domain,
    the JEPA is not deficient at all.
 
-### Broadening to general audio closes the ESC-50 transfer gap (multi-domain)
+### Broadening to general audio closes the ESC-50 transfer gap (multi-domain) — RETRACTED
+
+> **Retracted — the heading's claim is false.** The gap this section reports closing was an
+> artifact of scoring the grounding head against the eval set's statistics rather than its
+> own; it was never there to close. Re-run through the fixed eval against an AR(4) floor,
+> the multi-domain model is at parity in codec space and *further* behind in latent space
+> than the FMA-only model. See "Correction — the forecasting evaluation was measuring two
+> wrong things" and "The multi-domain checkpoint, re-run through the fixed eval" above.
+> Kept as written for the record.
 
 The diagnosis predicted the ESC-50 codec-forecasting gap was the *music-trained decoder*
 failing to generalize — not a model defect. Test: pretrain a multi-domain JEPA on FMA
@@ -277,6 +403,49 @@ matches the specialist baseline on transfer, wins in latent space. (The meanstd-
 
 Next extensions: multi-step rollout skill (Phase 3); decoded-audio listening tests; and an
 in-domain forecasting check on the multi-domain model (FSD50K-eval / FMA val).
+
+### The multi-domain checkpoint, re-run through the fixed eval
+
+`jepa_multi` (FMA + FSD50K, 25k steps) re-evaluated on ESC-50 with both defects fixed, AR(4)
+fit on **FMA + FSD50K** (its own training mixture, strided across both caches):
+
+| k | persistence | **AR(4)** | APC | JEPA-multi |
+|---|---|---|---|---|
+| 1 | 0.594 | **0.685** | 0.680 (−0.005) | 0.675 (**−0.010**) |
+| 2 | 0.562 | **0.659** | — | 0.656 (−0.003) |
+| 3 | 0.552 | **0.651** | 0.646 (−0.005) | — |
+| 4 | 0.539 | **0.642** | — | 0.640 (−0.002) |
+| 5 | 0.534 | **0.636** | 0.630 (−0.005) | — |
+| 8 | 0.523 | **0.616** | — | 0.619 (+0.002) |
+
+| latent space | k=1 | k=2 | k=4 | k=8 |
+|---|---|---|---|---|
+| vs latent-persistence | +28.8% | +45.7% | +51.2% | +45.1% |
+| **vs latent AR(4)** | **−18.5%** | **−14.5%** | **−20.2%** | **−26.0%** |
+
+The persistence row **reproduces the published +29/46/51/45 exactly**, so this is the same
+model and the same measurement — only the floor has changed.
+
+Three things follow:
+
+- **Against AR(4) the multi-domain model is at parity in codec space** (−0.010 to +0.002)
+  and clearly behind in its own latent space. So "beats persistence at every horizon on
+  unseen environmental sound, matches APC" is true and also not informative: a closed-form
+  linear fit does as well or better. APC sits at the same place (−0.005 throughout).
+- **The multi-domain model's latent deficit is *worse* than the FMA-only model's**
+  (−18.5…−26.0 vs −17.0…−12.2), and it widens with horizon. Broader pretraining moved the
+  persistence-relative number up sharply (+17% → +29% at k=1) while moving the
+  AR-relative number *down*. The metric that improved is the one that does not discriminate
+  — which is the cleanest available demonstration of why the floor had to change.
+- Absolute cosines are not comparable between this table and the FMA-only one above: each
+  is standardized in its own model's training space, and each AR is fit on its own model's
+  training mixture. Only the within-table gains are comparable, which is the point of
+  scoring every predictor in one shared space per run.
+
+**So the multi-domain campaign's stated purpose does not survive.** It was launched to close
+an ESC-50 forecasting gap that Defect 1 had manufactured; the gap was not real, and against a
+floor that means something the broader model is not ahead. Multi-domain data may still be
+right for the general-audio thesis — but it is not evidence that Phase 1 works.
 
 ### Is the probe deficit domain mismatch? (No.) — in-domain control
 
@@ -362,6 +531,16 @@ which is the concrete bar the Phase 1 causal JEPA (frame encoder + EMA target + 
 predictor + VICReg) must beat. As of the temporal-smoothness finding above, criterion (b)
 — the meanstd-ESC-50 probe — is under review as a yardstick for a world model; see the
 "fix the evaluation" decision.
+
+**Status after the forecasting correction: the gate is not passed, on either criterion.**
+Criterion (b) was never actually run — X-ARES was substituted with a homemade ESC-50 probe,
+which the JEPA fails. Criterion (a) was re-scoped to "beats persistence on forecasting",
+and persistence turns out to be cleared by a closed-form linear AR(4); against that floor
+the JEPA is behind in its own latent space at every horizon, and behind in codec space
+in-domain. Two things would move this honestly: (i) horizons long enough that linear
+extrapolation fails, so there is dynamics to learn rather than local continuation, and
+(ii) a representation eval that does not bake in a jumpiness prior — the recon-probe result
+below shows the information is present, so this is a readout question, not a data question.
 
 ## Phase 2a — supervised control: closed-loop controllability
 
