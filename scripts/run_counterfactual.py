@@ -57,6 +57,21 @@ def main() -> None:
     else:
         print("\n(no single-axis clips — per-axis attribution needs --p-axis lower)")
 
+    strat = rep.get("per_axis_by_observability") or {}
+    if strat:
+        print("\nby observability — how transient the clean audio is (median split within "
+              "each axis).")
+        print("Expected ratio is PER-AXIS. Gain is equally audible on either half, so "
+              "~1.0 is correct for it.\nThe test bites on rt60: reverb is heard through "
+              "transients, so working equally well on\nstationary clips suggests the model "
+              "reads the applied DSP rather than the acoustics.\n")
+        print(f"{'axis':<12}{'k':>4}{'transient half':>17}{'stationary half':>18}{'ratio':>9}")
+        for ax, per in strat.items():
+            for k, v in sorted(per.items()):
+                hg, lg = v["transient"]["action_gain"], v["stationary"]["action_gain"]
+                ratio = (hg / lg) if abs(lg) > 1e-6 else float("inf")
+                print(f"  {ax:<10}{k:>4}{hg:>+16.1%}{lg:>+18.1%}{ratio:>9.1f}")
+
 
 if __name__ == "__main__":
     main()

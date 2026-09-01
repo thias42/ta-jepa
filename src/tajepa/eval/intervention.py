@@ -16,6 +16,21 @@ difficulty cancels — the only difference is whether the action was supplied.
 
 Scored **at the transition** (the frames the action actually spans), since away from an event
 the action is zero by construction and both predictions are trivially identical.
+
+Results are also **stratified by observability** — how transient the clean audio is, measured
+as mean frame-to-frame codec flux. Reverb is the motivating case: a room is heard through its
+response to transients, and the applied RT60 is recoverable at R²≈+0.22 on transient-rich
+clips versus −2.0 on stationary ones. The stratification does double duty. It shows whether a
+weak average is really a weak dial or just clips where the intervention is inaudible; and it
+tests the stated risk of this whole design — if an axis works just as well on stationary
+clips *where its effect should be near-inaudible*, the model is reading the applied DSP
+rather than the acoustics.
+
+**The expected ratio is per-axis, not universal.** A gain change is equally audible on
+stationary and transient content, so gain *should* score about the same on both halves and a
+ratio near 1.0 means nothing is wrong. The asymmetry test applies to **reverb**, whose
+audibility genuinely depends on transients (and partly to tilt, on narrowband material).
+Reading a ratio of 1.0 as evidence of DSP-detection for gain would be a misuse of this table.
 """
 
 from __future__ import annotations
@@ -48,7 +63,7 @@ def counterfactual_report(
     target_encoder = target_encoder.to(device).eval()
     offsets = tuple(offsets or model.offsets)
 
-    acc: dict[str, list[float]] = {}
+    records: list[dict] = []
     n = min(n_clips, len(dataset))
     for i in range(n):
         item = dataset[i]
@@ -59,6 +74,9 @@ def counterfactual_report(
             continue
         span = torch.nonzero(a.abs().sum(-1)[0]).flatten()
         lo, hi = int(span[0]), int(span[-1])
+        # observability: how transient the CLEAN audio is (the pre-flight's split variable)
+        clean = item.get("features", item["intervened"])
+        flux = float(clean.diff(dim=0).abs().mean())
         z_tgt = target_encoder(x)
 
         w_real = action_windows(a, offsets)
@@ -66,37 +84,44 @@ def counterfactual_report(
         _, p_real = model.predict_with_deltas(x, w_real)
         _, p_null = model.predict_with_deltas(x, w_null)
 
+        only = axis_names[int(torch.nonzero(fired)[0])] if int(fired.sum()) == 1 else None
         for o in offsets:
             t = x.shape[1] - o
-            # frames whose prediction window overlaps the action
             s0, s1 = max(0, lo - o - horizon_pad), min(t, hi + horizon_pad)
             if s1 <= s0:
                 continue
             tgt = z_tgt[:, o:][:, s0:s1]
-            e_real = float((p_real[o][:, :t][:, s0:s1] - tgt).abs().mean())
-            e_null = float((p_null[o][:, :t][:, s0:s1] - tgt).abs().mean())
-            acc.setdefault(f"k{o}_real", []).append(e_real)
-            acc.setdefault(f"k{o}_null", []).append(e_null)
-            if int(fired.sum()) == 1:                       # clean per-axis attribution
-                nm = axis_names[int(torch.nonzero(fired)[0])]
-                acc.setdefault(f"{nm}_k{o}_real", []).append(e_real)
-                acc.setdefault(f"{nm}_k{o}_null", []).append(e_null)
+            records.append({
+                "offset": o, "axis": only, "flux": flux,
+                "real": float((p_real[o][:, :t][:, s0:s1] - tgt).abs().mean()),
+                "null": float((p_null[o][:, :t][:, s0:s1] - tgt).abs().mean()),
+            })
 
-    def gain(tag: str) -> dict | None:
-        r, u = acc.get(f"{tag}_real"), acc.get(f"{tag}_null")
-        if not r:
+    def gain(rows: list[dict]) -> dict | None:
+        if not rows:
             return None
-        mr, mu = sum(r) / len(r), sum(u) / len(u)
-        return {"n": len(r), "err_with_action": mr, "err_without": mu,
+        mr = sum(r["real"] for r in rows) / len(rows)
+        mu = sum(r["null"] for r in rows) / len(rows)
+        return {"n": len(rows), "err_with_action": mr, "err_without": mu,
                 "action_gain": 1 - mr / mu if mu > 0 else float("nan")}
 
-    out: dict = {"overall": {}, "per_axis": {}}
+    out: dict = {"overall": {}, "per_axis": {}, "per_axis_by_observability": {}}
     for o in offsets:
-        g = gain(f"k{o}")
+        at_o = [r for r in records if r["offset"] == o]
+        g = gain(at_o)
         if g:
             out["overall"][o] = g
         for nm in axis_names:
-            g = gain(f"{nm}_k{o}")
+            rows = [r for r in at_o if r["axis"] == nm]
+            g = gain(rows)
             if g:
                 out["per_axis"].setdefault(nm, {})[o] = g
+            # split within the axis, so the comparison is like-for-like
+            if len(rows) >= 8:
+                med = sorted(r["flux"] for r in rows)[len(rows) // 2]
+                hi_g = gain([r for r in rows if r["flux"] > med])
+                lo_g = gain([r for r in rows if r["flux"] <= med])
+                if hi_g and lo_g:
+                    out["per_axis_by_observability"].setdefault(nm, {})[o] = {
+                        "transient": hi_g, "stationary": lo_g, "median_flux": med}
     return out

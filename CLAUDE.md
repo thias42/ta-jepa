@@ -214,7 +214,17 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   data buys**: predict the future twice from one context, with and without the applied
   action, both scored against the true intervened future.
   `action_gain = 1 - err(with)/err(without)`; ~0 is a dead dial. Content difficulty cancels.
-  Per-axis figures use only single-axis clips so no axis borrows credit from another.
+  Per-axis figures use only single-axis clips so no axis borrows credit from another, and
+  are **stratified by observability** (median split on clean-audio codec flux). Reverb is
+  the motivating case — it is heard through transients, recoverable at R² +0.22 on
+  transient-rich clips vs −2.0 on stationary ones — so the split separates "inaudible here"
+  from a dead dial, and flags the reverse failure: an axis working where its effect should
+  be inaudible is reading the applied DSP, not the acoustics. **The expected ratio is
+  per-axis**: gain is equally audible on both halves, so ~1.0 is correct for it; the test
+  bites on rt60.
+- Firing rates on FMA (checked): gain 59% / tilt 61% / reverb 58%, only 1% of clips below
+  the reverb gate (ESC-50: 10%). Music is consistently moderate in transient content;
+  ESC-50 is bimodal — sharp events plus a stationary tail.
 - `src/tajepa/diagnostics.py` — `feature_std` / `effective_rank` collapse monitors, wired
   into training now so the path carries into Phase 1.
 - `src/tajepa/data/` — manifests (JSONL), audio + cached-embedding datasets, `io.py`.

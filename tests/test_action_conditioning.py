@@ -96,3 +96,53 @@ def test_counterfactual_attributes_per_axis_only_on_single_axis_clips():
                                 device="cpu", axis_names=("gain_db", "tilt_oct"))
     assert rep["overall"], "overall should still be reported"
     assert rep["per_axis"] == {}, "no axis may claim credit when two fired together"
+
+
+def test_counterfactual_stratifies_by_observability():
+    """Reverb is only audible on transient content, so a weak average may just be clips
+    where the intervention is inaudible. The split separates that from a genuinely dead
+    dial — and flags the opposite failure, an axis that works even where it should not."""
+    t_len = 24
+    action = torch.zeros(t_len, 1)
+    action[10, 0] = 2.0
+    target = torch.zeros(t_len, 4)
+    target[11] = 2.0
+
+    class _VaryingDS:
+        """Half the clips are transient (high codec flux), half are flat."""
+
+        def __len__(self):
+            return 20
+
+        def __getitem__(self, i):
+            clean = (torch.randn(t_len, 4) if i % 2 else torch.zeros(t_len, 4))
+            return {"features": clean, "intervened": target, "action": action}
+
+    rep = counterfactual_report(_Fake(deaf=False), _Target(), _VaryingDS(), offsets=(1,),
+                                device="cpu", axis_names=("rt60_s",))
+    strat = rep["per_axis_by_observability"]["rt60_s"][1]
+    assert strat["transient"]["n"] > 0 and strat["stationary"]["n"] > 0
+    assert strat["transient"]["n"] + strat["stationary"]["n"] == rep["per_axis"]["rt60_s"][1]["n"]
+    # the split variable is the CLEAN stream's flux, so the noisy half must land on top
+    assert strat["median_flux"] > 0
+
+
+def test_stratification_needs_enough_clips_to_be_meaningful():
+    """With too few single-axis clips the split is not reported, rather than reported on
+    three samples a side."""
+    t_len = 24
+    action = torch.zeros(t_len, 1)
+    action[10, 0] = 2.0
+
+    class _TinyDS:
+        def __len__(self):
+            return 4
+
+        def __getitem__(self, i):
+            return {"features": torch.randn(t_len, 4), "intervened": torch.zeros(t_len, 4),
+                    "action": action}
+
+    rep = counterfactual_report(_Fake(deaf=False), _Target(), _TinyDS(), offsets=(1,),
+                                device="cpu", axis_names=("rt60_s",))
+    assert rep["per_axis"]["rt60_s"][1]["n"] == 4
+    assert rep["per_axis_by_observability"] == {}
