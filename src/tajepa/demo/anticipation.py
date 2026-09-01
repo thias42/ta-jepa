@@ -132,22 +132,34 @@ The linear-AR reference comes from one of two places, in order of preference:
 
     @torch.no_grad()
     def _fit_latent_ar():
-        """Closed-form AR(p) on target latents — the reference the model must actually beat."""
+        """Closed-form AR(p) on target latents — the reference the model must actually beat.
+
+        Announces on stdout which reference is in use. Losing the AR degrades the demo
+        silently — it just stops reporting the only number that discriminates and falls back
+        to the flattering one — so the startup log has to say which of the three cases it is.
+        """
         from ..models.linear_ar import LinearAR
 
         if ar_state:
-            return LinearAR.load(ar_state).eval()
+            ar = LinearAR.load(ar_state).eval()
+            print(f"[ta-jepa] AR reference: linear AR({ar.order}) loaded from {ar_state}")
+            return ar
         root = Path(ar_corpus or examples) if (ar_corpus or examples) else None
         clips = sorted(p for p in root.glob("*") if p.suffix.lower() in
                        {".wav", ".flac", ".ogg", ".mp3"}) if root else []
         if not clips:
+            print("[ta-jepa] AR reference: NONE — reporting skill vs persistence only, which "
+                  "is a weak bar on smooth latents. Pass ar_state (preferred) or ar_corpus.")
             return None
         seqs = []
         for c in clips:
             wav = load_resampled(str(c), sr, mono=True)[:, : int(max_seconds * sr)]
             seqs.append(target(codec.encode(wav.unsqueeze(0).to(device)).to(device)).cpu())
         dim = seqs[0].shape[-1]
-        return LinearAR(dim, order=ar_order, offsets=offsets).fit(seqs)
+        ar = LinearAR(dim, order=ar_order, offsets=offsets).fit(seqs)
+        print(f"[ta-jepa] AR reference: linear AR({ar_order}) fitted on {len(clips)} clips "
+              f"from {root} — a fallback; prefer ar_state fitted on the training distribution.")
+        return ar
 
     _ar = _fit_latent_ar()
     _ar_p = _ar.order if _ar is not None else ar_order
