@@ -127,41 +127,111 @@ Phase 1 is *not* closed. Three things gate it, in this order:
    inherently smoothing; the JEPA objective *preserves* that smoothness where APC's grounded
    objective destroys it. "The causal objective creates smoothness" was never supported.
 
-## Phase 2 — Control conditioning (blocked on a definition)
+## Phase 2 — Control conditioning (rebuilt around exogenous interventions)
 
 - **2a — Supervised descriptors.** Extract frame-aligned loudness, spectral centroid, onset density, chroma/pitch (+voicing). Inject via FiLM or cross-attention into `g_φ`. Condition on the *delta* to apply, so control is learned as transition modulation rather than absolute state.
 - **2b — Learned latent actions.** Inverse model `q(a_t | z_t, z_{t+1})` with a small VQ bottleneck, inserted mid-stack (VQ-APC found mid-stack insertion best; expect the pretext loss to *worsen* while representation/control quality improves — so don't use prediction loss for model selection). Drop the inverse model at inference; drive with chosen codes.
 - **Risk**: latent actions can shortcut / leak. Mitigate with commitment loss, a deliberately small codebook, and entropy/KL regularization on code usage.
 
-### The action question (open; decide before any further Phase 2 work)
+### The action question — DECIDED (2026-09-01): exogenous interventions
 
-The descriptors above are **not actions**. In V-JEPA-2-AC the action is *exogenous* — a
-robot joint command — and the model must learn the world's response. Here the "action" is a
-descriptor of the very observation being predicted, so commanding "loudness +2σ" partially
-specifies the target rather than intervening on an environment. That is conditional
-generation, and the controllability eval measures conditioning fidelity. Two branches:
+The descriptors above are **not actions**. In V-JEPA-2-AC the action is *exogenous* — a robot
+joint command — and the model must learn the world's response. A descriptor describes the very
+observation being predicted, so commanding "loudness +2σ" partially specifies the target
+rather than intervening on anything. That is conditional generation, which is why the
+controllability eval was only ever measuring conditioning fidelity, and why 2b's codebook
+collapsed onto loudness: with no true latent action to recover, a VQ bottleneck can only
+quantize the largest innovation, and that is energy.
 
-- **(a) Get a genuinely exogenous action.** Train on audio with a *known applied
-  intervention* — gain automation, filter sweep, an added source, a room/reverb change —
-  applied to clips already cached. This makes the world-model framing honest, and it fixes
-  three other things at once: the controllability eval gains **ground truth** (you applied
-  it, so you know the answer), which supplies the round-trip null and real effect sizes;
-  and it explains the 2b codebook collapse, since with a real exogenous cause the inverse
-  model has something to recover instead of quantizing the largest innovation (energy).
-  Existing Phase 2 work is not wasted — it becomes the supervised-descriptor arm.
-- **(b) Drop the framing.** Rename to "controllable causal predictive audio model", keep the
-  existing results as they are. Defensible, and it is what actually exists today.
+**Decision: branch (a).** Train on audio with *known applied interventions*, motivated by
+robot audition — the microphone is occluded, or the robot moves into a different room.
 
-This decision defines Phase 2. Under (a) Phase 2 is rebuilt around interventions and its
-eval is designed in from the start; under (b) it is relabelled and closed.
+**What this is, precisely.** These are **observation-model** interventions: covering a
+microphone changes how the scene is sensed, not the scene itself. That is the exact audio
+analogue of camera pose in V-JEPA-2-AC, and for a mobile robot ego-motion *is* the dominant
+agent-controlled cause of audio change — moving alters the source→mic transfer function. So
+the defensible claim is **action-conditioned audio prediction**, not "predicts how the world
+evolves under its actions". State it that way rather than have a reviewer say it.
 
-### Controllability rigour (fold into whichever branch is chosen)
+#### The design decision that separates a world model from a style transfer
+
+**Interventions are timed events, not per-clip labels.** A uniformly reverberant clip teaches
+a static transform. Reverb switching on at t = 2 s because the robot crossed a doorway forces
+the model to predict a *transition* — that is action-conditioned dynamics, and it is the only
+version that earns the name. It also lands directly on the anticipation eval that already
+exists: told "reverb increases now", does the prediction move before the evidence arrives?
+
+#### The three axes
+
+All cheap to synthesise from the cached audio, and all *visually inferable*, which matters for
+the multimodal extension below.
+
+| axis | robotics story | action parameter |
+|---|---|---|
+| **Gain** | microphone covered; distance change | Δ dB |
+| **Spectral tilt / lowpass** | microphone occluded, muffled | Δ cutoff (octaves) or tilt dB/oct |
+| **Reverb** | moved to another room | Δ RT60, or room parameters directly |
+
+Reverb via `pyroomacoustics` (image-source method) is the best value: RIRs are generated from
+room dimensions and absorption, so **the action vector is literally the room parameters** —
+continuous, sweepable, and it allows holding out unseen rooms to test generalisation in
+*action* space rather than only in audio.
+
+Tier 2, once the above works: source distance/azimuth (needs spatial rendering), and an added
+interferer (another agent, a machine starting up).
+
+#### Two rules, both learned expensively in Phase 2a
+
+1. **Post-normalise level after filtering and reverb.** Lowpass removes energy and reverb
+   changes level, so without normalisation all three axes correlate with loudness — and the
+   loudness axis would be rediscovered for the fourth time.
+2. **Condition on the action *delta*, not the state.** Zero everywhere, non-zero at the
+   transition. This reuses the existing delta-FiLM machinery unchanged and keeps the semantics
+   "an action occurred" rather than "the observation currently looks like this", which is the
+   category error that started all of this.
+
+#### Paired data dissolves the recoverability gate
+
+Applied interventions give the **same clip clean and intervened**. Control is then measured by
+comparing the predicted future against the *true intervened audio*, not by re-extracting a
+descriptor from rendered audio.
+
+That retires the criterion which has governed Phase 2 so far — codec-recoverability of the
+descriptor (harmonic_ratio R²≈0.34 works, onset ≈0.07 dead). It matters immediately for
+reverb: RT60 is a windowed, not per-frame, quantity — the same property that ruled out the
+tempogram — so under the old eval it would have looked undiagnosable. Under paired ground
+truth it is fine.
+
+It also supplies the honest 2b re-test: given (clean, intervened) pairs, can the inverse model
+recover the applied action? Identifiability is now by construction, so a codebook that still
+collapses onto energy would be a real finding rather than a foregone one.
+
+#### Risk: learning to detect the DSP
+
+The failure mode is that the model learns to recognise the applied processing rather than
+anything acoustic. Mitigate with real RIRs alongside synthetic ones, randomised intervention
+timing and magnitude, and — the load-bearing one — evaluation on **held-out action
+parameters**, interpolating and extrapolating in action space rather than only over held-out
+audio. A model that works only at the RT60 values it trained on has memorised a filter bank.
+
+#### What carries over
+
+The `ControllableJEPA` FiLM path (action vector in place of descriptor delta), the codec
+frontend, and the closed-loop render machinery all survive. The existing descriptor work
+becomes the *supervised-descriptor arm* rather than being discarded. What changes is the eval,
+which is designed in from the start this time rather than retrofitted.
+
+### Controllability rigour (fold into the intervention eval)
 
 Raw effect sizes in σ (the published matrices are column-normalised, which hides magnitude),
 bootstrap CIs, and a percentile rather than clip-mean readout — a mean over 256 frames is
 structurally blind to sparse spiky descriptors like onset, which is an alternative
 explanation for the "dead" transient dials that has never been separated from the render-path
 one.
+
+Note that paired ground truth supersedes most of this for the *intervention* axes — effect
+sizes come from comparing against the true intervened audio rather than from a normalised
+matrix. What remains necessary is the retrospective check on the existing descriptor results.
 
 **One piece of this is independent and should be done now, not later: the round-trip null.**
 Encode true codec frames → decode → re-extract descriptors, with no model involved. It tests
@@ -261,6 +331,15 @@ The single-modality plan above is Phase 1–4. The larger thesis — and the str
 - *Skip-step Δt prediction* (predict variable horizons, not just next-frame) — the same device as the APC time-shift already in Phase 1. Reuse one horizon-sampling scheme across both the unimodal and multimodal objectives.
 - *Reward token as auxiliary output* if targeting planning/navigation.
 
+**The Phase 2 action space is chosen to be visually inferable.** Room geometry predicts
+reverb; an occluding hand predicts gain and spectral tilt; approaching a doorway predicts the
+transition. So the audio branch's actions are precisely the quantities a vision branch could
+later *supply* — which is the cross-modal prediction that makes an AV-JEPA interesting, and
+exactly what AVWM lacked with a single stationary ringtone. Honest sequencing, though: all of
+Phase 2 is buildable and validatable audio-only, and the AV step still needs synchronised
+audio-visual data with ego-motion, which remains the field's blocker (below). Do not tailor
+the action space to a specific robot until the audio-only version demonstrably works.
+
 **Data gap = opportunity.** The AVWM authors concede the blocker is the absence of real-world data with both precise action labels and tightly synchronized audio-visual streams. Options: (a) start on their synthetic regime conceptually but with richer audio (multiple/moving sources, music, environmental) to stress the audio branch; (b) use passive in-the-wild AV (no actions) for the cross-modal pretraining objective, which needs no action labels, and reserve action conditioning for a smaller labelled set — mirroring V-JEPA 2's "internet video pretrain, small action-data finetune" split. A real synchronized AV-with-actions dataset would itself be a contribution.
 
 **Sequencing.** This is strictly after the unimodal Phase 1 validates. The cross-modal objective is meaningless if the audio branch hasn't been shown to predict-and-not-collapse on its own first.
@@ -284,8 +363,10 @@ Phase 0: days. Phase 1: the real work, weeks — gate everything on validating i
 1. **Phase 1 exit conditions** — seeds (in flight), then X-ARES or an explicit retirement of
    that criterion, plus the two write-ups. Cheap, and everything else is uninterpretable
    until the error bars land.
-2. **The action decision** (Phase 2 branch a or b) — needs no compute, only a call, and
-   every hour of Phase 2 work before it is speculative. Make it while the seeds run.
+2. ~~The action decision~~ **DECIDED**: exogenous interventions (gain / spectral tilt /
+   reverb), applied as timed events. Phase 2 is rebuilt around it — see above. The first
+   concrete task is the intervention data pipeline, which is independent of the seeds and
+   of Phase 2.5 and can start immediately.
 3. **The round-trip null** — independent of both, needs no training, and tests a conclusion
    already in `RESULTS.md`.
 4. **Phase 2.5: long context + long horizon** — the one that decides whether "world model"

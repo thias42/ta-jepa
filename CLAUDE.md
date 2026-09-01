@@ -62,7 +62,12 @@ never actually run; a homemade ESC-50 probe stood in, and that probe measures re
 than information. Phase 1 now exits on: (a) skill over `LinearAR` that survives **multiple
 seeds with error bars** — the current margin is +3–10% from single runs; (b) X-ARES run for
 real, or that criterion explicitly retired; (c) the two corrections written up. Phase 2 is
-**blocked on deciding what an "action" is** (exogenous intervention vs. renaming the project);
+**rebuilt around exogenous interventions** (decided 2026-09-01): gain, spectral tilt and
+reverb applied to cached audio as *timed events*, so the action is a real intervention rather
+than a descriptor of the observation being predicted. Paired clean/intervened data replaces
+descriptor re-extraction as the controllability measure, which retires the
+codec-recoverability gate. See the plan's Phase 2 for the axes, the two design rules
+(post-normalise level; condition on the action delta) and the held-out-action-parameter test;
 Phase 2.5 (RoPE/ALiBi + long horizon) is the test of whether "world model" is earned. Do not
 start cross-modal work until Phase 1 exits on evidence.
 
