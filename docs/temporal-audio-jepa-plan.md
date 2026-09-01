@@ -52,6 +52,10 @@ This document is the original design rationale; the body below is preserved as w
 - **Data/stack divergences:** used **FSD50K** as the general set (not AudioSet, impractical to
   download); **librosa** only (not madmom/CREPE); pitch via `librosa.yin`.
 
+**Open points and their order are now tracked in the phase sections below** — Phase 1 exit
+conditions (seeds, X-ARES, two write-ups), the Phase 2 action question, and Phase 2.5 (long
+context + long horizon). See "Sequencing" for the revised order.
+
 Still on-track as designed: continuous codec embeddings (#1), VICReg anti-collapse (#3, holds
 — effective rank ~226–241/256), and the closed-loop controllability methodology. Multi-domain
 data remains right for the general-audio thesis but is *not* evidence that Phase 1 works — the
@@ -99,13 +103,74 @@ The core of the project. Validate this fully before adding anything.
 - **Validate**: X-ARES linear probe vs A-JEPA / data2vec / wav2vec2; forward latent-prediction error vs a naive persistence baseline across horizons.
 - **Watch**: representation variance / effective rank as a live collapse monitor.
 
-## Phase 2 — Control conditioning
+### Phase 1 exit conditions (revised 2026-09-01)
+
+Phase 1 is *not* closed. Three things gate it, in this order:
+
+1. **Error bars (in flight).** Every forecasting figure to date is a single run. The margin
+   over the linear-AR floor is +3–10%, small enough that it cannot be distinguished from
+   seed noise by inspection. Five seeds are training (`train_seeds`, `jepa_multi_v2_s0..4`);
+   the claim stands or falls on mean ± std across them. Nothing downstream should be built
+   on the current number until this returns.
+2. **X-ARES, actually run.** The original gate says "competitive on X-ARES". It was never
+   run — a homemade ESC-50 std-pooling probe stood in, and that probe is now known to
+   measure *readout* rather than information (routing the latent through the model's own
+   grounding head before pooling recovers 53.8% vs the codec's 55.0%, from 48.6% raw). So
+   criterion (b) is unevaluated, not failed. Run it once properly, or retire the criterion
+   explicitly — do not let it lapse quietly.
+3. **Two write-ups of experiments already done** (see `RESULTS.md`): the recon-probe result
+   above, which replaces "the probe metric is broken" with the provable "the information is
+   present but not linearly readable under std-pooling"; and the corrected smoothness claim.
+   The measured version of the latter is the more interesting one — an *untrained* causal
+   transformer already sits at 0.579 lag-1 autocorrelation vs the codec's 0.291, and an
+   untrained LSTM at 0.908 vs trained APC's 0.270. So causal attention over history is
+   inherently smoothing; the JEPA objective *preserves* that smoothness where APC's grounded
+   objective destroys it. "The causal objective creates smoothness" was never supported.
+
+## Phase 2 — Control conditioning (blocked on a definition)
 
 - **2a — Supervised descriptors.** Extract frame-aligned loudness, spectral centroid, onset density, chroma/pitch (+voicing). Inject via FiLM or cross-attention into `g_φ`. Condition on the *delta* to apply, so control is learned as transition modulation rather than absolute state.
 - **2b — Learned latent actions.** Inverse model `q(a_t | z_t, z_{t+1})` with a small VQ bottleneck, inserted mid-stack (VQ-APC found mid-stack insertion best; expect the pretext loss to *worsen* while representation/control quality improves — so don't use prediction loss for model selection). Drop the inverse model at inference; drive with chosen codes.
 - **Risk**: latent actions can shortcut / leak. Mitigate with commitment loss, a deliberately small codebook, and entropy/KL regularization on code usage.
 
-## Phase 2.5 — Positional encoding (decided; next phase)
+### The action question (open; decide before any further Phase 2 work)
+
+The descriptors above are **not actions**. In V-JEPA-2-AC the action is *exogenous* — a
+robot joint command — and the model must learn the world's response. Here the "action" is a
+descriptor of the very observation being predicted, so commanding "loudness +2σ" partially
+specifies the target rather than intervening on an environment. That is conditional
+generation, and the controllability eval measures conditioning fidelity. Two branches:
+
+- **(a) Get a genuinely exogenous action.** Train on audio with a *known applied
+  intervention* — gain automation, filter sweep, an added source, a room/reverb change —
+  applied to clips already cached. This makes the world-model framing honest, and it fixes
+  three other things at once: the controllability eval gains **ground truth** (you applied
+  it, so you know the answer), which supplies the round-trip null and real effect sizes;
+  and it explains the 2b codebook collapse, since with a real exogenous cause the inverse
+  model has something to recover instead of quantizing the largest innovation (energy).
+  Existing Phase 2 work is not wasted — it becomes the supervised-descriptor arm.
+- **(b) Drop the framing.** Rename to "controllable causal predictive audio model", keep the
+  existing results as they are. Defensible, and it is what actually exists today.
+
+This decision defines Phase 2. Under (a) Phase 2 is rebuilt around interventions and its
+eval is designed in from the start; under (b) it is relabelled and closed.
+
+### Controllability rigour (fold into whichever branch is chosen)
+
+Raw effect sizes in σ (the published matrices are column-normalised, which hides magnitude),
+bootstrap CIs, and a percentile rather than clip-mean readout — a mean over 256 frames is
+structurally blind to sparse spiky descriptors like onset, which is an alternative
+explanation for the "dead" transient dials that has never been separated from the render-path
+one.
+
+**One piece of this is independent and should be done now, not later: the round-trip null.**
+Encode true codec frames → decode → re-extract descriptors, with no model involved. It tests
+a claim already standing in `RESULTS.md`, that transients are *render-limited* and a
+nonlinear latent→codec decoder would fix them. If transients do not survive a **clean** codec
+round trip, that diagnosis is wrong and the proposed fix is aimed at the wrong layer. Cheap,
+needs no training, and either protects or kills a documented conclusion.
+
+## Phase 2.5 — Long context and long horizon (decided; next phase)
 
 **Replace absolute sinusoidal positional encodings with RoPE or ALiBi.** The encoder
 currently adds absolute sinusoidal PE, so the model is only valid below its training
@@ -121,9 +186,32 @@ trajectory where two windows meet (`|z[t+1]-z[t]|` is 1.7× its local value at t
 Overlap cannot remove a seam; only a single pass over the whole clip can.
 
 RoPE and ALiBi both extrapolate beyond the trained length, which removes the windowing, the
-seam, and the silent-failure mode together. This should land before Phase 3: rollout
-stability over long horizons is not meaningful while the encoder cannot represent long
-sequences in the first place.
+seam, and the silent-failure mode together.
+
+**The horizon sweep belongs here, not as a separate task — and it is blocked by this one.**
+The open question the project most needs to answer is whether the model has learned
+*dynamics* or merely local continuation: everything measured so far is k=1–8, i.e. 13–107 ms,
+a range where "the near future looks like the recent past" explains most of the signal. The
+test is a sweep to k=25/75/150 (0.33/1/2 s), far enough out that linear extrapolation should
+fail. That cannot be done at the current context: a k=150 pair needs both `t` and `t+150`
+inside a 256-frame window, so only the first 106 frames can host one — 41% of the window, and
+none of them with much history. k=150 is effectively untrainable today; k=75 is marginal
+(71%); k=25 is fine. **A world model needs context ≫ horizon.** So the positional change is a
+precondition for the sweep, and the sweep is what justifies the positional change.
+
+Scope this phase as one set of runs:
+
+- Swap absolute sinusoidal PE for RoPE or ALiBi in `CausalTransformer`.
+- Train at a longer context (≥1024 frames ≈ 13.7 s) with offsets extended to
+  `1 2 4 8 25 75 150`.
+- Report skill vs `LinearAR` **as a function of horizon**, with the seeds discipline from
+  Phase 1. The interesting result is the horizon at which the AR floor breaks and the model
+  does not — if there is no such horizon, "world model" is not earned and the honest framing
+  is the Phase 2 branch (b) rename.
+- Confirm the windowing seam disappears (it should: one pass, no seam).
+
+This should land before Phase 3: rollout stability over long horizons is not meaningful while
+the encoder cannot represent long sequences in the first place.
 
 ## Phase 3 — Rollout stability
 
@@ -189,7 +277,26 @@ PyTorch Lightning · EnCodec/DAC (HF) · madmom / librosa / CREPE for descriptor
 
 ## Sequencing
 
-Phase 0: days. Phase 1: the real work, weeks — gate everything on validating it. Phase 2: weeks. Phase 3: the hard part. Phase 4: optional. The multimodal extension is a separate, later effort that depends entirely on Phase 1 succeeding. Don't proceed past Phase 1 until the causal audio backbone beats persistence and is competitive on X-ARES — and don't start the cross-modal work until it does.
+Phase 0: days. Phase 1: the real work, weeks — gate everything on validating it. Phase 2: weeks. Phase 3: the hard part. Phase 4: optional. The multimodal extension is a separate, later effort that depends entirely on Phase 1 succeeding.
+
+**Revised order (2026-09-01), after the evaluation corrections:**
+
+1. **Phase 1 exit conditions** — seeds (in flight), then X-ARES or an explicit retirement of
+   that criterion, plus the two write-ups. Cheap, and everything else is uninterpretable
+   until the error bars land.
+2. **The action decision** (Phase 2 branch a or b) — needs no compute, only a call, and
+   every hour of Phase 2 work before it is speculative. Make it while the seeds run.
+3. **The round-trip null** — independent of both, needs no training, and tests a conclusion
+   already in `RESULTS.md`.
+4. **Phase 2.5: long context + long horizon** — the one that decides whether "world model"
+   is earned.
+5. **Phase 2 rebuilt or relabelled**, per (2), with controllability rigour designed in.
+6. Phase 3 onward.
+
+The original gate ("beats persistence and is competitive on X-ARES") has been superseded on
+its first clause — persistence is not a bar; the floor is a closed-form linear AR — and its
+second clause was never actually evaluated. Don't start cross-modal work until both are
+settled on evidence.
 
 ---
 

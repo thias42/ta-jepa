@@ -245,6 +245,42 @@ def train(
 
 
 @app.function(image=image, secrets=[r2_secret], gpu=TRAIN_GPU,
+              ephemeral_disk=DISK_MIB, timeout=20 * 3600)
+def train_seeds(
+    model: str, dataset: str, seeds: str = "0,1,2", frontend: str = "encodec_24khz",
+    save_prefix: str = "", extra_args: str = "",
+) -> None:
+    """Train the same config under several seeds, in one container, for error bars.
+
+    Every headline forecasting figure so far comes from a single run, so a +3-10% margin
+    over the linear-AR floor has no error bar and cannot be distinguished from seed noise.
+    This trains ``seeds`` (comma-separated) sequentially and uploads ``<prefix>_s<seed>.ckpt``
+    for each.
+
+    Sequential in **one** container on purpose: the multi-domain caches are ~10 GB, and one
+    container per seed would re-pull them per run. Wall time is the cost; egress is the
+    saving. Launch with ``modal run --detach``.
+    """
+    datasets = [d.strip() for d in dataset.split(",") if d.strip()]
+    seed_list = [int(x) for x in seeds.split(",") if x.strip() != ""]
+    save_prefix = save_prefix or f"{model}_{'_'.join(datasets)}"
+    cache_dirs = [
+        _download_tar(f"cache/{frontend}/{d}.tar", f"{SCRATCH}/cache/{frontend}") for d in datasets
+    ]
+    for i, seed in enumerate(seed_list, 1):
+        name = f"{save_prefix}_s{seed}"
+        ckpt = f"{SCRATCH}/runs/{name}.ckpt"
+        print(f"=== seed {seed} ({i}/{len(seed_list)}) -> {name} ===", flush=True)
+        _run([
+            "python", f"{REPO}/scripts/train_{model}.py",
+            "--cache", *cache_dirs, "--accelerator", "gpu", "--save", ckpt,
+            "--seed", str(seed), *shlex.split(extra_args),
+        ])
+        _upload(ckpt, f"runs/{name}.ckpt")
+        print(f"DONE seed {seed}: runs/{name}.ckpt", flush=True)
+    print(f"DONE train_seeds: {len(seed_list)} runs -> {save_prefix}_s*.ckpt")
+
+@app.function(image=image, secrets=[r2_secret], gpu=TRAIN_GPU,
               ephemeral_disk=DISK_MIB, timeout=8 * 3600)
 def train_control(dataset: str, save_name: str = "", extra_args: str = "") -> None:
     """Phase 2a: train the controllable JEPA on codec + descriptor caches from R2.

@@ -105,7 +105,21 @@ modal run modal_app.py::train --model jepa --dataset fma_small,fsd50k \
     --save-name jepa_multi --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 \
     --grounding-coef 1.0 --max-steps 25000"
 modal run modal_app.py::evaluate --eval-kind forecast --dataset esc50 \
-    --jepa-ckpt jepa_multi --apc-ckpt apc_fma --extra-args "--max-clips 300"
+    --train-datasets fma_small,fsd50k --jepa-ckpt jepa_multi --apc-ckpt apc_fma \
+    --extra-args "--max-clips 300"
+```
+
+**Seed sweeps (error bars).** Single runs cannot separate a +3–10% margin over the AR floor
+from seed noise, so headline claims need several. `train_seeds` trains them sequentially in
+one container — the multi-domain caches are ~10 GB and one container per seed would re-pull
+them each time:
+
+```bash
+modal run --detach modal_app.py::train_seeds --model jepa --dataset fma_small,fsd50k \
+    --seeds 0,1,2,3,4 --save-prefix jepa_multi_v2 \
+    --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 --grounding-coef 1.0 \
+    --max-steps 25000"
+# then evaluate each: --jepa-ckpt jepa_multi_v2_s0 ... _s4, and report mean +/- std
 ```
 
 Then compare the ESC-50 forecasting curve to the FMA-only run — that's the test of whether
