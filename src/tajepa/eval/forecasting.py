@@ -54,6 +54,12 @@ def _resolve_frames(model, max_frames):
     """
     ctx = getattr(model, "trained_context", None) if model is not None else None
     if max_frames is None:
+        if model is not None and ctx is None:
+            import warnings
+            warnings.warn(
+                "Model records no trained context (pre-context checkpoint); defaulting to 512 "
+                "frames. If it was trained on shorter windows this scores extrapolation and "
+                "understates skill — pass --context-frames.", RuntimeWarning, stacklevel=3)
         return ctx or 512
     if ctx and max_frames > ctx:
         import warnings

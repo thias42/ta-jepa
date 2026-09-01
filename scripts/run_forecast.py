@@ -45,6 +45,11 @@ def main() -> None:
                     help="Cache the models were trained on. Fits the AR baseline there "
                          "(matched to the model) and supplies codec statistics for "
                          "pre-stats checkpoints.")
+    ap.add_argument("--context-frames", type=int, default=None,
+                    help="Sequence length the JEPA was trained on (its --window). Only "
+                         "needed for pre-context checkpoints, which record none; without "
+                         "it the eval scores past the training window and understates "
+                         "skill, because absolute positional encodings do not extrapolate.")
     ap.add_argument("--ar-order", type=int, default=4,
                     help="Order of the linear-AR reference (0 disables it).")
     ap.add_argument("--ar-clips", type=int, default=300, help="Clips used to fit the AR.")
@@ -63,6 +68,10 @@ def main() -> None:
         jepa_lit = JEPALightning.load_from_checkpoint(str(args.jepa_ckpt), map_location="cpu")
         jepa = jepa_lit.jepa
         ensure_codec_stats(jepa, args.train_cache, what=f"JEPA {args.jepa_ckpt.name}")
+        if args.context_frames and jepa.trained_context is None:
+            jepa.set_context_frames(args.context_frames)
+            print(f"Context window set to {args.context_frames} frames "
+                  f"(checkpoint recorded none)")
     if args.apc_ckpt:
         from train_apc import APCLightning
         apc = APCLightning.load_from_checkpoint(str(args.apc_ckpt), map_location="cpu").model
