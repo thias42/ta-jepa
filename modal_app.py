@@ -289,6 +289,40 @@ def counterfactual_eval(dataset: str, ckpt: str, extra_args: str = "") -> None:
     _run(["python", f"{REPO}/scripts/run_counterfactual.py", "--ckpt", local,
           "--cache", cache, *shlex.split(extra_args)])
 
+@app.function(image=image, secrets=[r2_secret], gpu=EVAL_GPU,
+              ephemeral_disk=DISK_MIB, timeout=6 * 3600)
+def evaluate_seeds(
+    dataset: str, ckpts: str, train_datasets: str = "", frontend: str = "encodec_24khz",
+    extra_args: str = "",
+) -> None:
+    """Forecasting eval over several seeds in one container, reported as mean ± std.
+
+    ``ckpts`` is comma-separated (e.g. ``jepa_multi_v2_s0,...,jepa_multi_v2_s4``). One
+    container on purpose: the caches are ~10 GB and one ``evaluate`` call per seed would
+    re-pull them each time. The AR floor and the eval statistics are then shared across
+    seeds by construction, which is also what makes the seeds comparable.
+    """
+    names = [c.strip() for c in ckpts.split(",") if c.strip()]
+    if not names:
+        raise ValueError("evaluate_seeds needs at least one checkpoint name")
+    cache_dir = _download_tar(f"cache/{frontend}/{dataset}.tar", f"{SCRATCH}/cache/{frontend}")
+    manifest = f"{SCRATCH}/manifests/{dataset}.jsonl"
+    _download(f"manifests/{dataset}.jsonl", manifest)
+    train_dirs = [
+        _download_tar(f"cache/{frontend}/{d.strip()}.tar", f"{SCRATCH}/cache/{frontend}")
+        for d in train_datasets.split(",") if d.strip()
+    ]
+    local = []
+    for name in names:
+        path = f"{SCRATCH}/runs/{name}.ckpt"
+        _download(f"runs/{name}.ckpt", path)
+        local.append(path)
+    cmd = ["python", f"{REPO}/scripts/run_forecast_seeds.py",
+           "--manifest", manifest, "--cache", cache_dir, "--jepa-ckpts", *local]
+    if train_dirs:
+        cmd += ["--train-cache", *train_dirs]
+    _run(cmd + shlex.split(extra_args))
+
 @app.function(image=image, secrets=[r2_secret], gpu=TRAIN_GPU,
               ephemeral_disk=DISK_MIB, timeout=20 * 3600)
 def train_seeds(

@@ -137,7 +137,10 @@ modal run --detach modal_app.py::train_seeds --model jepa --dataset fma_small,fs
     --seeds 0,1,2,3,4 --save-prefix jepa_multi_v2 \
     --extra-args "--dim 256 --enc-depth 6 --offsets 1 2 4 8 --grounding-coef 1.0 \
     --max-steps 25000"
-# then evaluate each: --jepa-ckpt jepa_multi_v2_s0 ... _s4, and report mean +/- std
+# evaluate them together — one container, one shared AR floor, mean +/- std:
+modal run modal_app.py::evaluate_seeds --dataset esc50 \
+    --train-datasets fma_small,fsd50k \
+    --ckpts jepa_multi_v2_s0,jepa_multi_v2_s1,jepa_multi_v2_s2,jepa_multi_v2_s3,jepa_multi_v2_s4
 ```
 
 Then compare the ESC-50 forecasting curve to the FMA-only run — that's the test of whether

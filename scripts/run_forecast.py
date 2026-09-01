@@ -65,7 +65,7 @@ def main() -> None:
     jepa = jepa_lit = apc = None
     if args.jepa_ckpt:
         from train_jepa import JEPALightning
-        jepa_lit = JEPALightning.load_from_checkpoint(str(args.jepa_ckpt), map_location="cpu")
+        jepa_lit = _bootstrap.load_jepa_lightning(JEPALightning, args.jepa_ckpt)
         jepa = jepa_lit.jepa
         ensure_codec_stats(jepa, args.train_cache, what=f"JEPA {args.jepa_ckpt.name}")
         if args.context_frames and jepa.trained_context is None:
