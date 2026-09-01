@@ -471,6 +471,42 @@ would training on longer or mixed-length windows. Until then, inference must win
 the trained window now travels in the checkpoint as `context_frames` so evaluation clamps to
 it by default instead of silently extrapolating.
 
+### Five seeds: the margin over the AR floor is real (Phase 1 exit condition 1)
+
+Five independent runs of the multi-domain config (`train_seeds`, `jepa_multi_v2_s0..4`,
+25k steps each on FMA+FSD50K), evaluated together against **one shared codec AR(4) floor**
+(`evaluate_seeds`), in-context on ESC-50:
+
+| k | codec cos gain vs AR(4) | latent skill vs AR(4) |
+|---|---|---|
+| 1 | **+0.022 ± 0.001** | **+7.7% ± 0.2%** |
+| 2 | **+0.027 ± 0.001** | **+12.0% ± 0.3%** |
+| 4 | **+0.026 ± 0.001** | **+10.9% ± 0.2%** |
+| 8 | **+0.028 ± 0.001** | **+9.3% ± 0.1%** |
+
+Per-seed codec gains at k=1 span +0.021 to +0.023. **Weakest horizon at mean−1σ: +0.021 —
+still positive**, and by a wide margin: zero is roughly 20σ away.
+
+**So the margin is established, not seed noise.** This was the open question behind every
+forecasting figure in this document, all of which came from single runs. Phase 1 exit
+condition (1) passes: the causal JEPA beats a closed-form linear AR(4) at every horizon
+tested, reproducibly.
+
+Three things this does *not* establish, which matter for how it is quoted:
+
+- **The margin is real but small.** AR(4) beats persistence by ~0.09–0.10 cosine here; the
+  model beats AR(4) by ~0.025. The model's edge over the honest floor is about a quarter of
+  the floor's edge over the naive one. "Beats a linear baseline reproducibly" is the claim;
+  "substantially better" is not.
+- **It is measured at k=1–8 only** — 13–107 ms, and inside the 256-frame training window.
+  Whether the model has learned *dynamics* rather than good local continuation is still
+  untested, and is exactly what Phase 2.5's horizon sweep is for.
+- **The seed variance is strikingly low** (std 0.001 on codec, 0.1–0.3% on latent). That the
+  result reproduces is good. That five different initialisations and data orderings land
+  within ±0.001 of each other also suggests the model converges to essentially one solution
+  — consistent with it learning a fairly simple, fixed improvement over linear extrapolation
+  rather than something richer. Not evidence against the result; a reason not to over-read it.
+
 ### The multi-domain checkpoint, re-run in-context
 
 `jepa_multi` (FMA + FSD50K, 25k steps) on ESC-50, scored **inside the 256-frame training

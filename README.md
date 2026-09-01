@@ -44,10 +44,12 @@ predictor, latent smooth-L1 + **VICReg** (`src/tajepa/models/jepa.py`,
   seam, and silent-failure mode together.
 - No collapse, throughout: effective rank 226–241/256.
 
-**Phase 1 gate: partly passed, on one criterion of two.** The backbone does beat trivial
-linear extrapolation in its own regime (+3% to +10% over AR(4)) — a real result, but a
-modest one from single runs without error bars, and it should be re-measured with seeds
-before much is built on it. The X-ARES criterion was never actually run; a homemade ESC-50
+**Phase 1 gate: one criterion of two passed, with error bars.** The backbone beats trivial
+linear extrapolation in its own regime, and that now survives five seeds: codec cos gain
+**+0.022 to +0.028 ± 0.001**, latent skill **+7.7% to +12.0% ± ≤0.3%**, weakest horizon at
+mean−1σ **+0.021**. Real and reproducible — but read it in proportion, since AR(4) itself
+beats persistence by ~0.09–0.10, so the model's edge over the honest floor is about a
+quarter of the floor's edge over the naive one. The X-ARES criterion was never actually run; a homemade ESC-50
 probe stood in for it, and the JEPA fails that. Phase 2 (control) was built anyway and its
 results stand on their own terms. Two open experiments: horizons well beyond the 13–107 ms
 tested, and a context long enough (or a positional scheme that extrapolates) that the model

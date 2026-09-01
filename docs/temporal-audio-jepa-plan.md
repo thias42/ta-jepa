@@ -107,12 +107,15 @@ The core of the project. Validate this fully before adding anything.
 
 Phase 1 is *not* closed. Three things gate it, in this order:
 
-1. **Error bars (in flight).** Every forecasting figure to date is a single run. The margin
-   over the linear-AR floor is +3–10%, small enough that it cannot be distinguished from
-   seed noise by inspection. Five seeds are training (`train_seeds`, `jepa_multi_v2_s0..4`);
-   the claim stands or falls on mean ± std across them. Nothing downstream should be built
-   on the current number until this returns.
-2. **X-ARES, actually run.** The original gate says "competitive on X-ARES". It was never
+1. ~~Error bars~~ **PASSED (2026-09-01).** Five seeds of the multi-domain config, scored
+   against one shared AR(4) floor: codec cos gain **+0.022/+0.027/+0.026/+0.028 ± 0.001**
+   and latent skill **+7.7/+12.0/+10.9/+9.3% ± ≤0.3%** at k=1/2/4/8. Weakest horizon at
+   mean−1σ is **+0.021**, with zero about 20σ away. The margin is reproducible, not seed
+   noise. Read it in proportion, though: AR(4) beats persistence by ~0.09–0.10 here and the
+   model beats AR(4) by ~0.025, so the edge over the honest floor is a quarter of the
+   floor's edge over the naive one — and it is measured only at 13–107 ms, inside the
+   training window.
+2. **X-ARES, actually run** *(now the binding constraint on Phase 1)*. The original gate says "competitive on X-ARES". It was never
    run — a homemade ESC-50 std-pooling probe stood in, and that probe is now known to
    measure *readout* rather than information (routing the latent through the model's own
    grounding head before pooling recovers 53.8% vs the codec's 55.0%, from 48.6% raw). So

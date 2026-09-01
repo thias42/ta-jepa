@@ -59,8 +59,9 @@ violating one, flag it explicitly.
 and be X-ARES-competitive — is superseded on both clauses. Persistence is not a bar: the floor
 is a closed-form **linear AR(4)**, which persistence loses to by a wide margin. And X-ARES was
 never actually run; a homemade ESC-50 probe stood in, and that probe measures readout rather
-than information. Phase 1 now exits on: (a) skill over `LinearAR` that survives **multiple
-seeds with error bars** — the current margin is +3–10% from single runs; (b) X-ARES run for
+than information. Phase 1 now exits on: (a) skill over `LinearAR` that survives multiple seeds —
+**PASSED**: five seeds give +0.022…+0.028 ± 0.001 codec cos gain and +7.7…+12.0% ± ≤0.3%
+latent skill, weakest horizon at mean−1σ +0.021 (`evaluate_seeds`); (b) X-ARES run for
 real, or that criterion explicitly retired; (c) the two corrections written up. Phase 2 is
 **rebuilt around exogenous interventions** (decided 2026-09-01): gain, spectral tilt and
 reverb applied to cached audio as *timed events*, so the action is a real intervention rather
