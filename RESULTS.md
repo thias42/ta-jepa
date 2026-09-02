@@ -956,6 +956,51 @@ moment nothing is yet observable and conditioning is the only route to anticipat
 lead *without* the matching window shift would have made things worse, not better — the action
 would pass out of the window before the frame it explains.
 
+### The lead did not help — refuted, and the fault is the conditioning path
+
+`intervention_fma_lead` (identical config, **only** the lead changed: 9 frames of
+unobservable warning instead of 1; `event_weight` left at 1.0 so this is a clean
+single-variable A/B against `intervention_fma`):
+
+| action_gain | k=1 | k=2 | k=4 | k=8 |
+|---|---|---|---|---|
+| lead = 0 (control) | +0.1% | +0.2% | +0.2% | +0.4% |
+| **lead = 9 frames** | +0.1% | +0.1% | +0.2% | +0.4% |
+| gain_db, lead = 9 | +0.2% | +0.3% | +0.5% | **+0.8%** |
+| rt60_s, lead = 9 | 0.0% | 0.0% | 0.0% | 0.0% |
+
+**Unchanged.** Making the action genuinely unobservable at command time did nothing, so
+observability was not the binding constraint and the redundancy diagnosis above is wrong.
+
+Two follow-up checks then removed the other easy explanations:
+
+- **There is plenty of headroom.** In the scored region the intervention shifts the codec
+  stream by 0.73 against the stream's own frame-to-frame dynamics of 0.86 — a ratio of
+  **0.85**, i.e. the intervention is as large as the signal's natural movement (per axis:
+  reverb 0.98, gain 0.52, tilt 0.43). The prediction error is *not* dominated by ordinary
+  audio unpredictability, so "there was nothing to gain" does not explain it.
+- **The FiLM is not stuck at its zero init.** Its `to_gb` weights grow to 1.3e-2 against the
+  prediction heads' 6.2e-2 — about 5× smaller, but alive. So neither a dead layer nor weight
+  decay killing a sparsely-supervised parameter explains it. (Measured on the 400-step local
+  smoke model; the cloud checkpoint could not be inspected locally for lack of R2 credentials,
+  so this is indicative rather than conclusive.)
+
+**Current hypothesis — FiLM's modulation is content-independent, and the required one is not.**
+`ControllablePredictor` applies `(1 + γ(a))·h + β(a)` to the final hidden state, with `γ, β`
+functions of the action *alone*. But the latent transformation an action implies depends on
+the content as well: −18 dB of gain, or a 2-octave lowpass, moves the latent differently
+depending on what the audio is. A content-independent affine offset on one hidden state,
+followed by a single linear head, cannot express that — and the transformer blocks that do the
+actual predicting never see the action at all.
+
+The concrete next test is to **inject the action into the predictor's input sequence** (or via
+cross-attention) so its blocks can compute a content-dependent response, rather than
+conditioning only the output head. Untested — it is a hypothesis, and the two before it were
+both wrong.
+
+**What the lead change is still worth.** It is the honest robotics analogue and it costs
+nothing, so it stays. It is simply not the fix.
+
 ## Glossary
 
 Terms and abbreviations used in this doc and the project.

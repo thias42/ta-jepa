@@ -269,6 +269,26 @@ Secondary levers, both cheap and now available: weighting the loss on event fram
 zero-init FiLM receives gradient in proportion to the information rather than 3% of it; and
 longer horizons, which couples this to Phase 2.5.
 
+**Update — the lead did not help (2026-09-01).** A clean single-variable A/B (lead 9 frames,
+everything else identical, `event_weight` left at 1.0) reproduced the control almost exactly:
+`action_gain` +0.1/+0.1/+0.2/+0.4% against the control's +0.1/+0.2/+0.2/+0.4%. So
+observability was not the binding constraint, and the redundancy diagnosis above was wrong.
+The lead stays — it is the honest robotics analogue and costs nothing — but it is not the fix.
+
+Two further checks removed the other easy explanations. **Headroom exists**: the intervention
+moves the codec stream by 0.73 against its own frame-to-frame dynamics of 0.86, so prediction
+error is not dominated by ordinary audio unpredictability. **The FiLM is not dead**: its
+weights grow off the zero init to 1.3e-2 against the heads' 6.2e-2.
+
+**So the fault is in the conditioning path, which is where the next attempt should go.**
+Working hypothesis: `ControllablePredictor` applies `(1 + γ(a))·h + β(a)` to the final hidden
+state, with `γ, β` functions of the action *alone* — but the latent transformation an action
+implies is content-dependent (−18 dB moves the latent differently depending on the audio), and
+the transformer blocks that do the predicting never see the action at all. The test is to
+inject the action into the predictor's **input sequence** (or via cross-attention) rather than
+modulating only the output head. Untested, and the two hypotheses before it were both wrong,
+so it should be run as a single-variable change like this one.
+
 #### Risk: learning to detect the DSP
 
 The failure mode is that the model learns to recognise the applied processing rather than

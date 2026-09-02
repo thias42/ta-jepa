@@ -208,6 +208,13 @@ $P scripts/extract_embeddings.py --manifest data/manifests/esc50.jsonl \
   ignores the conditioning — the first trained model scored `action_gain` ≈ 0. Training and
   eval must use the matching `--action-lead-frames`, which is stored on the checkpoint;
   a lead in the data *without* the shifted conditioning window is worse than none.
+  **The lead did not fix the dead dial** (clean A/B: action_gain unchanged at +0.1–0.4%), and
+  neither missing headroom nor a dead FiLM explains it — the intervention moves the codec
+  stream about as much as its own dynamics, and the FiLM weights do grow off zero. The open
+  hypothesis is that FiLM's *content-independent* affine modulation of the final hidden state
+  cannot express a transformation that depends on the audio; inject the action into the
+  predictor's input sequence instead. Change one variable at a time — two hypotheses here
+  have already been wrong.
 - `scripts/train_intervention.py` + `src/tajepa/models/action_conditioning.py` — the
   action-conditioned model. `ControllableJEPA` with the action in place of the descriptor
   delta; conditioning at offset `o` is the action summed over `[t, t+o)` (standard
